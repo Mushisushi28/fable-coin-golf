@@ -194,5 +194,4 @@ Free, and staying free. If Coin Golf coming back put a smile on your
 face and you'd like to buy the maintainer a coffee, that's here —
 completely optional, nothing is paywalled:
 
-**Ko-fi: https://ko-fi.com/<your-ko-fi-username>** *(placeholder —
-replace with the project's Ko-fi page before publishing)*
+**Ko-fi: https://ko-fi.com/fablecoingolf**
