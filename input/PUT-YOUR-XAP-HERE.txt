@@ -1,0 +1,11 @@
+Put your own legally obtained Fable: Coin Golf XAP in this folder.
+
+Expected file:  Fable Coin Golf v1.0.8.10.xap  (any .xap filename works;
+                the patcher verifies the contents by hash)
+Version:        1.0.8.10
+SHA-256:        3492b72f93cb8308917db8bb68738df2532742fc7afa9a65d25096b5214a3f73
+
+Then run:  python3 patcher/build.py
+
+This folder's contents are git-ignored. The XAP is yours; it is never
+copied into the repository or uploaded anywhere by the patcher.

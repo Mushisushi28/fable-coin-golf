@@ -1,0 +1,30 @@
+# --- Your game: NEVER commit any of this (see README "Legal") ---
+input/*.xap
+*.xap
+*.apk
+*.aab
+*.xnb
+*.wma
+*.ogg
+*.dll
+
+# --- Everything the pipeline generates from your XAP ---
+work/
+output/
+
+# --- Build output ---
+bin/
+obj/
+*.user
+.vs/
+
+# --- Local config / credentials: use your own, never commit ---
+appsettings.local.json
+leaderboard.local.json
+*.keystore
+keystore.properties
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp

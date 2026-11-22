@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Template: the patcher copies this to Properties/AndroidManifest.xml
+     in your work tree. Set your own package name (match the
+     ApplicationId in the .csproj). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.fablecoingolf">
+  <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
+  <!-- Only needed if you wire up your own online leaderboard backend
+       (see docs/LEADERBOARDS.md). The local backend needs no network. -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <application android:label="Fable Coin Golf" android:allowBackup="true"></application>
+</manifest>

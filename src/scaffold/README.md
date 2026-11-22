@@ -1,0 +1,26 @@
+# Scaffold — the port's original code
+
+Everything in this folder (including `compat/`) was written for this
+port. It is the only game-adjacent code this repository distributes.
+The patcher copies these files flat into the Android project in your
+work tree; the project template links your own decompiled sources
+around them.
+
+| File | Role |
+|---|---|
+| `Activity1.cs` | Android entry point (MonoGame `AndroidGameActivity`, portrait, fullscreen) |
+| `Wp7Stubs.cs` | WP7-only API shims: `PhoneApplicationService`, `Microsoft.Devices.Environment` |
+| `GamerServicesStubs.cs` | `Microsoft.Xna.Framework.GamerServices` surface MonoGame doesn't ship + WP7 marketplace task no-op |
+| `CompatStubs.cs` | BCL differences (WP7 `Stopwatch.GetRawElapsedTicks()`) |
+| `CaseFixContentManager.cs` | Runtime half of the case-sensitivity fix: retries content loads against a case-insensitive index of the packaged assets |
+| `ObjectFallbackReader.cs` | Content reader for object-typed XNB members |
+| `FcgInterp.cs` | Player-puck render interpolation state (30 Hz logic → high-refresh presentation) |
+| `compat/XboxLiveStub.cs` | Local replacement for the Xbox Live wrapper: synchronous sign-in, achievement snapshot reads, commit-on-earn writes |
+| `compat/LocalLeaderboards.cs` | Personal-best leaderboard provider (synthesises boards from your own save; never returns null, never fabricates rows) |
+| `compat/CCloudConnectivity.cs` | No-network replacement for the dead Fable III cloud service, same public signatures |
+
+The local-leaderboard drop-in (`compat/`) was staged during
+development as a self-contained set, which is why `GamerServicesStubs.cs`
+lives there rather than at the top level: it is the version of the
+stubs whose local profile reports itself as always signed in, which
+the local backend depends on.
