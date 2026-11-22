@@ -1,0 +1,97 @@
+--- a/Tech/CIwRenderableModel.cs
++++ b/Tech/CIwRenderableModel.cs
+@@ -204,6 +204,7 @@
+ 				instance.ModelMatrix = component.GetMatWorld();
+ 			}
+ 		}
++		FcgInterp.ApplyToOwner(base.Owner, instance); // TRACK-C WS3: puck translation interpolation (no-op unless the scaffold published a blend)
+ 		GraphicsDevice graphics = instance.Graphics;
+ 		graphics.BlendState = (alpha ? BlendState.AlphaBlend : BlendState.Opaque);
+ 		graphics.SamplerStates[0] = SamplerState.LinearWrap;
+@@ -363,7 +364,7 @@
+ 					m_TextureAnimPart.Add(new TextureAnimPart(meshPart, cIwTextureAnimation));
+ 				}
+ 			}
+-			m_AlphaParts = ((list.Count == 0) ? null : list.ToArray());
++			m_AlphaParts = ((list.Count == 0) ? null : OrderAlphaParts(list));
+ 			m_OpaqueParts = ((list2.Count == 0) ? null : list2.ToArray());
+ 			m_AdditiveParts = ((list3.Count == 0) ? null : list3.ToArray());
+ 		}
+@@ -383,6 +384,77 @@
+ 		{
+ 			s_AllModelsForMulti.Add(this);
+ 		}
++	}
++
++	// TRACK-C2 PHASE 2 (coin fix, root cause in TRACK-C2-LOG §7): within one
++	// renderable the deferred alpha pass draws m_AlphaParts strictly in array
++	// order (insertion order from the bucketing loop above — the render queue
++	// sorts RENDERABLES by depth, never parts within one). The coin models list
++	// their face part before their shadow part, so the shadow (RGB 0, centre
++	// alpha ~0.85, premultiplied blend) composites OVER the already-drawn gold
++	// face and crushes it to ~15%: the near-black pickups. In the original game
++	// the shadow is a ground halo that composites UNDER the face. Fix: for coin
++	// models, stable-partition the alpha bucket so shadow-class parts (bound
++	// texture asset name contains "shadow" — coin_shadow_64_0 on coin_rig,
++	// puckShadow_0 on coin_2hi/coin_4hi) draw FIRST, under their sibling face
++	// parts. Scoped to coin models on purpose: they are the measured defect;
++	// every other model's bucket order is untouched. coin_sngl has no shadow
++	// part, so its order is unchanged.
++	private static Texture2D GetPartTexture(CustomModelPart part)
++	{
++		Effect effect = part.Effect;
++		if (effect is BasicEffect)
++		{
++			return ((BasicEffect)effect).Texture;
++		}
++		if (effect is SkinnedEffect)
++		{
++			return ((SkinnedEffect)effect).Texture;
++		}
++		if (effect is AlphaTestEffect)
++		{
++			return ((AlphaTestEffect)effect).Texture;
++		}
++		if (effect is DualTextureEffect)
++		{
++			return ((DualTextureEffect)effect).Texture;
++		}
++		if (effect is EnvironmentMapEffect)
++		{
++			return ((EnvironmentMapEffect)effect).Texture;
++		}
++		return null;
++	}
++
++	private static bool IsShadowPart(CustomModelPart part)
++	{
++		Texture2D texture = GetPartTexture(part);
++		return texture != null && texture.Name != null && texture.Name.IndexOf("shadow", StringComparison.OrdinalIgnoreCase) >= 0;
++	}
++
++	private CustomModelPart[] OrderAlphaParts(List<CustomModelPart> alphaParts)
++	{
++		string modelName = ((m_Model != null && m_Model.Name != null) ? m_Model.Name : string.Empty);
++		if (modelName.IndexOf("coin", StringComparison.OrdinalIgnoreCase) < 0)
++		{
++			return alphaParts.ToArray();
++		}
++		List<CustomModelPart> ordered = new List<CustomModelPart>(alphaParts.Count);
++		foreach (CustomModelPart part in alphaParts)
++		{
++			if (IsShadowPart(part))
++			{
++				ordered.Add(part);
++			}
++		}
++		foreach (CustomModelPart part in alphaParts)
++		{
++			if (!IsShadowPart(part))
++			{
++				ordered.Add(part);
++			}
++		}
++		return ordered.ToArray();
+ 	}
+ 
+ 	protected DynamicVertexBuffer CreateLocalVertexBuffer()

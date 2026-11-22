@@ -1,0 +1,43 @@
+--- a/Tech/CIwDecoratedText.cs
++++ b/Tech/CIwDecoratedText.cs
+@@ -56,22 +56,34 @@
+ 				Vector2 posInPixels = component.GetPosInPixels();
+ 				posInPixels.X -= viewport2.X;
+ 				posInPixels.Y -= viewport2.Y;
++				// FULLASPECT (2026-11-15): plaque correction shared by the
++				// background and cap branches below. The plaque's drawn height
++				// is set to the WIDTH scale (authored proportions at any
++				// aspect; corr == 1 at the 480x800 design aspect) and the plaque
++				// is centred vertically in its layout slot, so the
++				// frame-aligned text stays centred on the plaque (the CAPFIX
++				// criterion) on any screen shape.
++				float fcgAspectCorr = (800f * viewport.Width) / (480f * viewport.Height);
++				float fcgPlaqueH = sizeInPixels.Y * fcgAspectCorr;
++				float fcgPlaqueDY = (sizeInPixels.Y - fcgPlaqueH) / 2f;
+ 				spriteRenderer.GraphicsDevice.Viewport = viewport2;
+ 				if (m_Background[CurrentBackground].Texture != null)
+ 				{
+-					Vector2 vector = new Vector2(sizeInPixels.X / (float)m_Background[CurrentBackground].UvRectangle.Width, sizeInPixels.Y / (float)m_Background[CurrentBackground].UvRectangle.Height);
++					Vector2 vector = new Vector2(sizeInPixels.X / (float)m_Background[CurrentBackground].UvRectangle.Width, fcgPlaqueH / (float)m_Background[CurrentBackground].UvRectangle.Height);
+ 					spriteRenderer.Begin();
+-					spriteRenderer.Draw(m_Background[CurrentBackground].Texture, posInPixels, (Rectangle?)m_Background[CurrentBackground].UvRectangle, m_colour * base.Alpha, 0f, Vector2.Zero, vector, SpriteEffects.None, 0f);
++					spriteRenderer.Draw(m_Background[CurrentBackground].Texture, new Vector2(posInPixels.X, posInPixels.Y + fcgPlaqueDY), (Rectangle?)m_Background[CurrentBackground].UvRectangle, m_colour * base.Alpha, 0f, Vector2.Zero, vector, SpriteEffects.None, 0f);
+ 					spriteRenderer.End();
+ 				}
+ 				else if (m_Left.Texture != null && m_Right.Texture != null)
+ 				{
+ 					Vector2 vector2 = posInPixels;
+-					Vector2 vector3 = new Vector2(Math.Sign(m_Left.UvRectangle.Width), 1f);
++					vector2.Y += fcgPlaqueDY;
++					float capScale = viewport.Width / 480f; // WS-B CAP FIX (keeper 2026-11-14): left/right caps were drawn at native texture scale while the text path scales by entryViewport.Width/480 (WS2) - caps now scale by the same factor; background branch untouched, no Y-flips
++					Vector2 vector3 = new Vector2(Math.Sign(m_Left.UvRectangle.Width) * capScale, capScale);
+ 					Vector2 vector4 = default(Vector2);
+-					Vector2 vector5 = new Vector2(Math.Sign(m_Right.UvRectangle.Width), 1f);
+-					vector4.Y = posInPixels.Y;
+-					vector4.X = posInPixels.X + (float)Math.Abs(m_Left.UvRectangle.Width) - 1f;
++					Vector2 vector5 = new Vector2(Math.Sign(m_Right.UvRectangle.Width) * capScale, capScale);
++					vector4.Y = posInPixels.Y + fcgPlaqueDY;
++					vector4.X = posInPixels.X + ((float)Math.Abs(m_Left.UvRectangle.Width) - 1f) * capScale;
+ 					spriteRenderer.GraphicsDevice.Viewport = new Viewport(clipRectangle);
+ 					spriteRenderer.Begin();
+ 					spriteRenderer.Draw(m_Left.Texture, vector2, (Rectangle?)m_Left.UvRectangle, m_colour * base.Alpha, 0f, Vector2.Zero, vector3, SpriteEffects.None, 0f);

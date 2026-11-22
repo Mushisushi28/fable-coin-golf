@@ -1,9 +1,10 @@
 # Fixes — what was broken, and what the port does about it
 
 A WP7 XNA game does not simply recompile for Android. These are the
-defects the port had to solve, in the order they were found. Items
-marked **automated** are handled by the pipeline; items marked
-**manual** are described in `patches/PATCHES.md` and not yet automated.
+defects the port had to solve, in the order they were found. **Every
+fix below is automated by the pipeline** — the ones that change
+decompiled files ship as verified diffs in `patches/files/` (see
+`patches/PATCHES.md` for the per-file inventory).
 
 ## Compile surface (automated)
 WP7-only APIs (`Microsoft.Phone.Shell`, `Microsoft.Devices`,
@@ -43,12 +44,14 @@ decode. Converted to OGG (libvorbis) with a verified 3-byte Song XNB
 patch per track (P6). Lesson recorded from the original work: patch
 XNBs as bytes, never as text.
 
-## Coins rendered the wrong colour (manual, M1)
+## Coins rendered the wrong colour (automated — `CIwRenderableModel.cs.patch`)
 A part-ordering problem in the model renderable: transparent parts
-must be ordered explicitly and shadow parts keyed separately. Fix is a
-scaffold copy of one decompiled file — described, not distributed.
+must be ordered explicitly and shadow parts keyed separately
+(`OrderAlphaParts`: shadow-textured parts composite before/under
+face parts). The patch applies that ordering to your copy of the
+renderable.
 
-## Dialogue wrapped to one word per line (manual, M2)
+## Dialogue wrapped to one word per line (automated — `CIwRenderableTextureSpec.cs.patch`)
 A creation race: UI texture specs baked their scale from the *live*
 viewport on a background load thread, racing the main loop's viewport
 cycle (design pin → render target → backbuffer). A bad sample
@@ -57,27 +60,32 @@ never changed, so the bake cancelled out. Fix: bake against the fixed
 design viewport. Fonts were exonerated byte-for-byte before this was
 found — the authored wrap was always correct.
 
-## Menu text plaques misregistered (manual, M3)
+## Menu text plaques misregistered (automated — `CIwDecoratedText.cs.patch`)
 One draw branch (decorated-text end caps) missed the scale factor the
-text path received. Fix scales only that branch. A related earlier
-theory — that render-target presentation needed a Y-flip correction —
-was **disproven by experiment** (it inverted the whole menu stack;
-those builds were quarantined). The rule the port now lives by:
-**never Y-flip any viewport, clip, or position in this port** — the
-render-target→backbuffer blit already supplies the second flip, so
-orientation and sub-viewport origin cancel.
+text path received. The patch scales that branch by the same factor,
+and centres the plaque on its text at any aspect (the plaque
+correction). A related earlier theory — that render-target
+presentation needed a Y-flip correction — was **disproven by
+experiment** (it inverted the whole menu stack; those builds were
+quarantined). The rule the port now lives by: **never Y-flip any
+viewport, clip, or position in this port** — the render-target→
+backbuffer blit already supplies the second flip, so orientation and
+sub-viewport origin cancel.
 
-## Startup hang (manual, M4)
+## Startup hang (automated — `CFabMobGame.cs.patch`)
 A background load thread and the main thread contended over the
-content cache lock, and the load-complete signal could fire before the
+content cache lock (an AB–BA deadlock against MonoGame's
+BlockOnUIThread), and the load-complete signal could fire before the
 level preload finished. Fix: pre-cache the splash font on the main
 thread before the load thread starts; reorder the load-phase tail so
 preload completes before the signal.
 
-## Presentation: HD + high refresh (partially included)
-Design space stays 480×800 forever; the world renders to a
-full-resolution render target and the player puck is interpolated
-between the engine's fixed 30 Hz logic steps (`FcgInterp.cs`,
-included), which is what makes 120 Hz presentation smooth instead of
-steppy. The render-target plumbing in the patched game files is
-manual work (M6).
+## Presentation: HD + high refresh (automated — `Game.cs.patch` and friends)
+Design width stays 480 forever; the design height follows the live
+backbuffer aspect, the world renders to a full-resolution render
+target, and the player puck is interpolated between the engine's
+fixed 30 Hz logic steps (`FcgInterp.cs`), which is what makes 120 Hz
+presentation smooth instead of steppy. The camera, texture, text and
+splash patches (`CIwCamera`, `CIwRenderableTexture`,
+`CIwRenderableText`, `CIwSplashScreens`, `CGameOverState`) carry the
+matching per-surface corrections.

@@ -1,0 +1,205 @@
+--- a/Tech/CLevelEndSubstate.cs
++++ b/Tech/CLevelEndSubstate.cs
+@@ -20,13 +20,6 @@
+ 		}
+ 	}
+ 
+-	private struct CAvatarEntry
+-	{
+-		public string GamerTag;
+-
+-		public CIwEnt LeaderboardEntryEnt;
+-	}
+-
+ 	public static CLevelEndSubstate Instance;
+ 
+ 	private ButtonFormat m_LeftButtonFormat;
+@@ -35,8 +28,6 @@
+ 
+ 	private bool m_NeedsRefresh;
+ 
+-	private bool m_NeedToConnect;
+-
+ 	private bool m_ActivePage;
+ 
+ 	private string m_CachedMessage = "";
+@@ -46,10 +37,6 @@
+ 	private bool m_SyncingFailed;
+ 
+ 	private IEnumerable<CLeaderboardEntry> m_Leaderboard;
+-
+-	private int m_AvatarSyncIndex = -1;
+-
+-	private List<CAvatarEntry> m_LeaderboardAvatars;
+ 
+ 	private bool EndOfTrial
+ 	{
+@@ -84,13 +71,9 @@
+ 	{
+ 		m_ActivePage = true;
+ 		m_Leaderboard = null;
+-		m_NeedToConnect = false;
+ 		m_SyncingFailed = false;
+ 		m_NeedsRefresh = false;
+ 		m_PopulationUpdate = false;
+-		m_LeaderboardAvatars = new List<CAvatarEntry>();
+-		m_AvatarSyncIndex = -1;
+-		CIwXBOXLiveWrapper.SignInGamer(GamerSignedInCallback);
+ 		GameScores.Medal medalAward = CPlayerInfo.GameScores.GetMedalAward(CLevelManager.Chapter, CLevelManager.Level);
+ 		PopulateScreen("LevelComplete", (medalAward == GameScores.Medal.None) ? "END_LEVEL_FAILURE_TITLE" : "END_LEVEL_SUCCESS_TITLE");
+ 		EnableVerticalScroll(enable: true);
+@@ -106,13 +89,10 @@
+ 	public override void OnExit()
+ 	{
+ 		base.OnExit();
+-		m_LeaderboardAvatars.Clear();
+-		m_AvatarSyncIndex = -1;
+ 		m_ActivePage = false;
+ 		CIwInput.Instance.UnRegister(null, null, OnBackKeyPress);
+ 		CIwMenuManager.Instance.Close();
+ 		CIwSoundManager.Instance.AnimSoundsDisabled = false;
+-		CIwXBOXLiveWrapper.UnregisterSignInGamerCallback(GamerSignedInCallback);
+ 	}
+ 
+ 	public override void Update()
+@@ -176,7 +156,6 @@
+ 
+ 	protected override void PopulateContainer()
+ 	{
+-		m_LeaderboardAvatars.Clear();
+ 		base.DeltaOffset = -0.03234f;
+ 		string chapter = CLevelManager.Chapter;
+ 		string level = CLevelManager.Level;
+@@ -343,21 +322,20 @@
+ 		base.DeltaOffset = -0.004f;
+ 		CIwEnt cIwEnt = AddPanel(PanelType.leaderboardTop);
+ 		CIwEnt cIwEnt2 = CIwMenu.CreateEnt("leaderboard_panel_header");
+-		string message = ((m_SyncingFailed || m_NeedToConnect) ? fabmob.LS_ERRORSYNCING : ((m_Leaderboard == null) ? fabmob.LS_SYNCING : fabmob.MAIN_MENU_LEADERBOARDS));
++		string message = (m_SyncingFailed ? fabmob.LS_ERRORSYNCING : ((m_Leaderboard == null) ? fabmob.LS_SYNCING : fabmob.MAIN_MENU_LEADERBOARDS));
+ 		SetRenderableText("header_leaderboards_title", message, cIwEnt2);
+ 		SetRenderableText("header_leaderboards_level", string.Format(fabmob.LVL_INTRO_LVLNUMBER, currentLevel.Chapter.Levels.IndexOf(currentLevel) + 1), cIwEnt2);
+ 		cIwEnt.AddChild(cIwEnt2);
+-		if (m_NeedToConnect || m_SyncingFailed)
++		if (m_SyncingFailed)
+ 		{
+ 			cIwEnt = AddPanel(PanelType.leaderboardError);
+-			SetRenderableText("leaderboardsPanelErrorText", m_NeedToConnect ? fabmob.LEADERBOARD_NO_SIGN_IN : fabmob.LEADERBOARD_NO_SERVER, cIwEnt);
++			SetRenderableText("leaderboardsPanelErrorText", fabmob.LEADERBOARD_NO_SERVER, cIwEnt);
+ 		}
+ 		else if (m_Leaderboard != null)
+ 		{
+ 			int num = 0;
+ 			if (Enumerable.Count<CLeaderboardEntry>(m_Leaderboard) > 0)
+ 			{
+-				CAvatarEntry item = default(CAvatarEntry);
+ 				foreach (CLeaderboardEntry item2 in m_Leaderboard)
+ 				{
+ 					cIwEnt = AddPanel((num % 2 == 0) ? PanelType.leaderboardMid1 : PanelType.leaderboardMid2);
+@@ -368,9 +346,6 @@
+ 					SetRenderableText("leaderboardsPanelMid_Name", item2.Tag, cIwEnt);
+ 					CIwEnt cIwEnt3 = CIwMenu.CreateEnt("leaderboard_entry_image_template", assertOnFailure: false);
+ 					cIwEnt.AddChild(cIwEnt3);
+-					item.GamerTag = item2.Tag;
+-					item.LeaderboardEntryEnt = cIwEnt3;
+-					m_LeaderboardAvatars.Add(item);
+ 					num++;
+ 				}
+ 			}
+@@ -408,12 +383,21 @@
+ 		if (!CSettings.IsTrialMode)
+ 		{
+ 			CPlayerInfo.Instance.SyncGold(LevelScores.GetCount(CLevelScores.CoinsCollected));
++			int levelId = CSettings.LevelTable[Level].ID;
++			int chapterId = CSettings.LevelTable[Level].Chapter.ID;
+ 			if (prevBestScore < LevelScores.BestScore)
+ 			{
+-				CIwXBOXLiveWrapper.WriteLeaderboard(LeaderboardKey.BestScoreLifeTime, CSettings.LevelTable[Level].ID, LevelScores.BestScore, null);
++				// Submit the three boards (level best, chapter total,
++				// overall total), then read the level board so the fresh
++				// best is included. No username yet: the submits are
++				// skipped and the scores stay local for the claim-time
++				// backfill, but the global board still reads.
+ 				CChapterScores chapter = CPlayerInfo.GameScores.GetChapter(Chapter);
+-				CIwXBOXLiveWrapper.WriteLeaderboard(LeaderboardKey.BestScoreLifeTime, CSettings.LevelTable[Level].Chapter.ID, chapter.GetScore(), null);
+-				CIwXBOXLiveWrapper.WriteLeaderboard(LeaderboardKey.BestScoreLifeTime, 0, CPlayerInfo.GameScores.GetOverallTotalScore(), null);
++				CLeaderboardService.SubmitLevelEndScores(levelId, chapterId, LevelScores.BestScore, chapter.GetScore(), CPlayerInfo.GameScores.GetOverallTotalScore(), OnEndReadLeaderboard);
++			}
++			else
++			{
++				CLeaderboardService.GetBoardWithOwnRank(CLeaderboardService.BoardForLevel(levelId), 3, OnEndReadLeaderboard);
+ 			}
+ 		}
+ 	}
+@@ -456,56 +440,26 @@
+ 		component.SetText(text);
+ 	}
+ 
+-	private void GamerSignedInCallback(object sender, SignedInEventArgs args)
++	private void OnEndReadLeaderboard(List<CLeaderboardEntry> topEntries, CLeaderboardEntry ownEntry)
+ 	{
+ 		if (m_ActivePage)
+ 		{
+-			SignedInGamer gamer = args.Gamer;
+-			if (CIwXBOXLiveWrapper.IsSignedIntoLive(gamer))
+-			{
+-				CIwXBOXLiveWrapper.ReadLeaderboard(LeaderboardKey.BestScoreLifeTime, CLevelManager.Instance.CurrentLevel.ID, OnEndReadLeaderboard, pivotGamer: false, 3);
+-				return;
+-			}
+-			m_NeedToConnect = true;
++			if (topEntries != null)
++			{
++				// Top 3, plus the player's own row when they are not in
++				// the top 3 (mirrors the leaderboard menu's pivot row).
++				List<CLeaderboardEntry> entries = new List<CLeaderboardEntry>(topEntries);
++				if (ownEntry != null)
++				{
++					entries.Add(ownEntry);
++				}
++				m_Leaderboard = entries;
++			}
++			else
++			{
++				m_SyncingFailed = true;
++			}
+ 			m_NeedsRefresh = true;
+ 		}
+ 	}
+-
+-	private void OnEndReadLeaderboard(IEnumerable<CLeaderboardEntry> entries)
+-	{
+-		if (m_ActivePage)
+-		{
+-			if (entries != null)
+-			{
+-				m_Leaderboard = entries;
+-			}
+-			else
+-			{
+-				m_SyncingFailed = true;
+-			}
+-			m_NeedsRefresh = true;
+-			if (m_AvatarSyncIndex == -1 && m_LeaderboardAvatars.Count > 0)
+-			{
+-				m_AvatarSyncIndex = 0;
+-				CCloudConnectivity.GetAvatar(m_LeaderboardAvatars[m_AvatarSyncIndex].GamerTag, ImageCallback);
+-			}
+-		}
+-	}
+-
+-	public void ImageCallback(Texture2D texture)
+-	{
+-		if (m_ActivePage && m_AvatarSyncIndex < m_LeaderboardAvatars.Count)
+-		{
+-			if (texture != null)
+-			{
+-				CIwRenderableTexture component = m_LeaderboardAvatars[m_AvatarSyncIndex].LeaderboardEntryEnt.GetComponent<CIwRenderableTexture>(2);
+-				component.SetRenderAssets(texture);
+-			}
+-			m_AvatarSyncIndex++;
+-			if (m_AvatarSyncIndex < m_LeaderboardAvatars.Count)
+-			{
+-				CCloudConnectivity.GetAvatar(m_LeaderboardAvatars[m_AvatarSyncIndex].GamerTag, ImageCallback);
+-			}
+-		}
+-	}
+ }

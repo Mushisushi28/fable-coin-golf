@@ -14,14 +14,16 @@ not an emulator wrapper — with HD presentation at up to 120 fps, the
 original music restored, and working leaderboards standing in for the
 dead Xbox Live service.
 
-> **Status, honestly:** the pipeline below reproduces the playable
-> port — full game, local leaderboards and achievements, restored
-> music. Several later polish fixes from the development builds are
-> included as precise patch *descriptions* (`patches/PATCHES.md`,
-> items M1–M7) rather than automation. There is no one-click
-> installer; if a prerequisite is missing, the pipeline stops and
-> tells you exactly what to install or run. Nothing here is
-> fire-and-forget, and nothing is uploaded anywhere.
+> **Status, honestly:** the pipeline below reproduces the newest
+> development build of the port — the `fable-ui-fixes-2026-11-18`
+> lineage: full game, HD/120 fps presentation, coin/dialogue/menu
+> fixes, restored music, and global leaderboards (against your own
+> backend) with local boards when none is configured. **Every**
+> source difference from a fresh decompile of your XAP is an
+> automated, hunk-verified patch — there are no manual steps. It is
+> still not a fire-and-forget installer: if a prerequisite is
+> missing, the pipeline stops and tells you exactly what to install
+> or run, and nothing is uploaded anywhere.
 
 ## You need
 
@@ -65,6 +67,12 @@ confusing places.
 
    Use your own application id — do not ship builds under anyone
    else's.
+
+   Optional, for global leaderboards: before running, copy
+   `leaderboard.config.example.json` to `leaderboard.config.json`,
+   fill in your own backend's URL + anon key (setup:
+   `docs/LEADERBOARDS.md`), and the build will use it. Without it
+   you get the local boards — a complete, offline configuration.
 3. Install the result:
 
    ```
@@ -80,9 +88,12 @@ confusing places.
 verify     SHA-256-checks your XAP
 extract    unzips it (a XAP is a ZIP: 4 DLLs + Content/)
 decompile  ILSpy-decompiles the 4 DLLs on YOUR machine
-assemble   scaffold + project template + your localisation file +
-           GamePatched.cs generated from YOUR Game.cs +
-           the game's own thumbnail as the app icon
+assemble   scaffold + project template + EVERY source patch applied
+           to your decompiled files (16 verified diffs: presentation,
+           coin, dialogue, menu, hang, animation fixes + the global
+           leaderboard wiring) + your patched localisation file +
+           dialog resources/font/generated art + the game's own
+           thumbnail as the app icon + your leaderboard config
 content    stages Content/, patches XNB reader tables,
            converts the music WMA→OGG and byte-patches the Song XNBs,
            plans duplicate-case assets (Android is case-sensitive,
@@ -106,10 +117,12 @@ makes — and everything it deliberately does not change — is
   Android; the build converts your tracks to OGG).
 - **Achievements and leaderboards without Xbox Live**: a local
   backend synthesises personal-best boards from your own save and
-  commits achievements locally (`src/scaffold/compat/`). An optional
-  global backend against your own hosted database is specified in
-  `docs/LEADERBOARDS.md` — no hosted project, endpoint, or key is
-  included in this repo.
+  commits achievements locally (`src/scaffold/compat/`). The newest
+  build's **global leaderboards are included too**: claim a username
+  in Settings and your scores go to *your own* hosted backend
+  (bring-your-own setup in `docs/LEADERBOARDS.md` — no hosted
+  project, endpoint, or key for any live service is included in this
+  repo; unconfigured builds use the local boards).
 - Touch mapped the way the WP7 original felt.
 
 ## FAQ
@@ -140,20 +153,22 @@ design: a missing prerequisite stops the pipeline with the exact
 install command instead of skipping a step silently. `docs/BUILDING.md`
 walks each stage by hand.
 
-**Dialogue text looks wrong / a menu plaque is offset.** Known
-defects with precisely described fixes — `patches/PATCHES.md` M2/M3.
-They are the main gap between this pipeline and the later development
-builds, and automating them is the project's top TODO.
+**Dialogue text looks wrong / a menu plaque is offset.** Those were
+real defects in early builds; the fixes are automated patches in
+this pipeline (`patches/PATCHES.md`). If you still see them, your
+build predates the patches or a patch refused and the build stopped
+— check the build log rather than playing a half-patched build.
 
 ## Project layout
 
 ```
 input/      your XAP goes here (git-ignored)
-patcher/    the pipeline: build.py + the Game.cs transformer
-src/        the scaffold (all original code) + project/manifest templates
-tools/      XNB / packaging utilities (all original code)
-patches/    PATCHES.md — every change, automated or described
-docs/       architecture, building, fixes, leaderboards
+patcher/    the pipeline: build.py + the patch appliers + manifest
+src/        the scaffold (all original code), dialog resources,
+            Cinzel font, project/manifest templates
+tools/      XNB / packaging / art utilities (all original code)
+patches/    PATCHES.md + files/*.patch — every source change
+docs/       architecture, building, fixes, leaderboards, backend SQL
 work/       everything generated from your XAP (git-ignored)
 output/     your APK (git-ignored)
 ```

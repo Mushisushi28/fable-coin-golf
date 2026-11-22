@@ -1,124 +1,104 @@
-# Patches — what the pipeline changes, and what it does not (yet)
+# Patches — every change the pipeline makes
 
-The port never modifies the decompiled tree in place. Every change is
-either (a) an original scaffold file that *replaces* a decompiled file
-via a project-file exclusion, (b) a transformation script in
-`patcher/` or `tools/` that runs on your own files, or (c) a build-copy
-data patch. This file is the complete inventory.
+The port never modifies the decompiled tree in place. Every change
+is either (a) an original scaffold file that *replaces* a decompiled
+file via a project-file exclusion, (b) a unified-diff patch in
+`patches/files/` that the patcher applies to your own decompiled
+files at build time — generating the replacement copy into the
+project, or patching your work copy of the decompiled tree in place —
+or (c) a build-copy data patch. This file is the complete inventory.
+**There are no manual steps**: a full pipeline run produces the
+newest development build (`fable-ui-fixes-2026-11-18` lineage) from
+your XAP.
 
-## Automated by the pipeline
+## Source patches (`patcher/apply_patches.py` + `patch_manifest.json`)
 
-### P1 — `FabMob/Game.cs` → `GamePatched.cs` (entry point)
-Tool: `patcher/apply_game_patch.py` (verifies its patterns, refuses on
-mismatch). Exactly two changes:
-1. `Environment.DeviceType` → `Microsoft.Devices.Environment.DeviceType`
-   (bare name is ambiguous under the Android reference pack).
-2. `protected override void OnExiting(object sender, EventArgs args)`
-   → `protected void OnExiting(...)`, and the
-   `base.OnExiting(sender, args);` call inside it is removed
-   (MonoGame's Android Game has no such virtual). Body otherwise intact.
+Each `.patch` is a minimal unified diff (changed hunks only, 3 lines
+of context) against the pristine ILSpy output for v1.0.8.10. The
+patcher verifies every hunk against your files exactly and refuses
+on any mismatch — a different game build or decompiler output stops
+the build instead of producing a wrong tree.
 
-### P2 — XBOX Live wrapper replaced (no decompiled file changed)
-The project compiles only the two data types (`CAchievement`,
-`CLeaderboardEntry`) from your decompiled XBOXLiveConnectivity tree.
-The wrapper itself is replaced by the original local backend in
-`src/scaffold/compat/XboxLiveStub.cs` + `LocalLeaderboards.cs`:
-sign-in completes synchronously with a local profile, achievements are
-snapshot reads / commit-on-earn against your own save, leaderboard
-reads are synthesised from your own per-level bests. See
+### Replacement patches (patched copy generated into the project;
+the decompiled original is excluded in the .csproj)
+
+| Patch | File | What it fixes |
+|---|---|---|
+| `Game.cs.patch` | `FabMob/Game.cs` → `GamePatched.cs` | The entry point: OnExiting de-overridden + DeviceType qualified (the original two fixes), plus the whole presentation layer — HD render target, dynamic-aspect design window (480 × design-height), viewport pinning in Update, touch display size, fixed-30 Hz logic dispatch with puck interpolation (120 Hz presentation), splash/cover handling |
+| `CFabMobGame.cs.patch` | `Tech/CFabMobGame.cs` | **Startup hang (M4):** pre-caches the splash font on the main thread before the load thread starts, and moves `LoadComplete()` after `Preload()` — together they close the AB–BA content-lock deadlock |
+| `CIwAnimPlayer.cs.patch` | `Tech/CIwAnimPlayer.cs` | Animation timing: playback advances by the engine-clock delta instead of per-draw real time, decoupling animation speed from the (up to 4×) presentation rate |
+| `CIwCamera.cs.patch` | `Tech/CIwCamera.cs` | Dynamic-aspect projection: FOV widens on taller-than-design screens so horizontal framing is preserved |
+| `CIwDecoratedText.cs.patch` | `Tech/CIwDecoratedText.cs` | **Menu caps (M3)** + plaque correction: end caps scale by `viewport.Width / 480` like the text path, and plaque height/centre follow the width scale so text stays centred on its plaque at any aspect |
+| `CIwRenderableModel.cs.patch` | `Tech/CIwRenderableModel.cs` | **Coin rendering (M1):** transparent parts are ordered explicitly — shadow-textured parts composite before/under face parts (`OrderAlphaParts`), so gold pickups render gold instead of black |
+| `CIwRenderableText.cs.patch` | `Tech/CIwRenderableText.cs` | Text renders at the render-target scale: glyph size/advances scale by `viewport.Width / 480`, and the design-viewport clip correction for the scaled path |
+| `CIwRenderableTexture.cs.patch` | `Tech/CIwRenderableTexture.cs` | Full-aspect texture correction: framed textures keep authored proportions (height follows the width scale, centred in the slot); fullscreen backgrounds draw COVER |
+| `CIwRenderableTextureSpec.cs.patch` | `Tech/CIwRenderableTextureSpec.cs` | **Dialogue wrap (M2):** texture specs bake their scale against the fixed design viewport (480×800) instead of the live viewport read on the background load thread — the race that collapsed dialogue to one word per line |
+| `CIwSplashScreens.cs.patch` | `Tech/CIwSplashScreens.cs` | Splash screens draw COVER at the dynamic design window; the prompt position follows the design height |
+| `CGameOverState.cs.patch` | `Tech/CGameOverState.cs` | Cover/game-over screens draw to the full current viewport instead of native texture pixels |
+
+### In-place patches (your work copy of the decompiled tree is
+patched; the files compile from there, as in the development builds)
+
+| Patch | File | What it does |
+|---|---|---|
+| `CLeaderBoardMenuSubstate.cs.patch` | `Tech/CLeaderBoardMenuSubstate.cs` | Global boards: reads go straight to the leaderboard service (no sign-in — boards are public), per-board error state instead of the dead SYNCING hang, the entry-name top-margin fix (`SetTextTopMargin`, 42 → 34) from the UI-fix release. The Xbox Live avatar machinery is removed |
+| `CLevelEndSubstate.cs.patch` | `Tech/CLevelEndSubstate.cs` | Level end submits level/chapter/overall scores and reads back the level's global top-3 + own rank via the service |
+| `CMainMenuSubState.cs.patch` | `Tech/CMainMenuSubState.cs` | UI-fix release: chapter-select heading/medal-number margins lifted (33 → 21, 132 → 120) and the top-strip totals re-set in Charlemagne 10pt, re-centred (`SetTopStripText`) |
+| `COptionsMenuSubState.cs.patch` | `Tech/COptionsMenuSubState.cs` | Settings gains the username item: shows the claimed name, opens the native username dialog via the service, refreshes when a claim lands |
+| `fabmob.cs.patch` | `Tech/Tech/localisation/fabmob.cs` | Adds the strongly-typed accessors for the 11 username strings the resx patch adds |
+
+### Resource patch (`patcher/patch_resx.py`)
+
+Programmatic, verified replacements on your
+`Tech.localisation.fabmob.resx`: the two `sent_gold` strings are
+reworded for the local banking semantics, and the port's 11 username
+strings are inserted after `OPTIONS_MENU_RESET_DATA`. See
 `docs/LEADERBOARDS.md`.
 
-### P3 — Cloud connectivity replaced (one exclusion)
-`Tech/CCloudConnectivity.cs` is excluded in the project template and
-replaced by `src/scaffold/compat/CCloudConnectivity.cs`: same public
-signatures, zero network. The original posted to a long-dead web
-service for Fable III gold/item transfers; the local version completes
-every operation synchronously with local semantics (gold is banked at
-level end; item awards retire their retry bookkeeping without granting
-anything in Fable III — that service no longer exists).
+## Scaffold replacements (original files, no patch needed)
 
-### P4 — XNB reader tables (build copies only)
-Tool: `tools/patch_xnb_readers.py`, run on the staged `Assets/Content`
-copy. Rewrites custom-assembly references in XNB type-reader strings
-from the original WP7 assembly names to the scaffold's single compiled
-assembly name, stripping the version/culture segment for those
-references. Framework reader strings are left untouched.
+- **Cloud connectivity:** `Tech/CCloudConnectivity.cs` is excluded
+  and replaced by `src/scaffold/compat/CCloudConnectivity.cs` (same
+  public signatures, zero network — the Fable III service is gone).
+- **Xbox Live wrapper:** only the two data types compile from your
+  decompiled `XBOXLiveConnectivity`; the wrapper is
+  `src/scaffold/compat/XboxLiveStub.cs` + `LocalLeaderboards.cs`.
+- **Global leaderboard client:** `src/scaffold/CLeaderboardService.cs`
+  (the port's own code) + `LeaderboardConfig.cs` (generated from your
+  `leaderboard.config.json`; empty = local fallback). The username
+  dialog lives in `src/scaffold/Activity1.cs` with
+  `src/resources/layout/dialog_username.xml`.
 
-### P5 — Case-fix duplicates (build copies only)
-Tools: `tools/fix_case_pass.py` (planning) + `tools/inject_dupes.py`
-(APK injection at the package stage) + the runtime half,
-`src/scaffold/CaseFixContentManager.cs`. WP7 content lookup is
-case-insensitive; Android's is not, and the game requests assets in
-spellings that match neither the file's case nor all-lowercase. The
-pass plans duplicate-case entries and injects them into the built APK
-(zip entries are case-sensitive even though the build filesystem may
-not be).
+## Data patches (build copies only)
 
-### P6 — Music: WMA → OGG + Song XNB byte patch
-Tools: `ffmpeg` (invoked by the pipeline; libvorbis, quality 6) +
-`tools/patch_song_xnbs.py`. The three tracks
-(`UpbeatChapter_01`, `chapterTwoTheme`, `chapterThreeTheme`) are
-converted from your XAP's loose `.wma` files to `.ogg`; each Song XNB
-is patched at the byte level — exactly 3 bytes differ (`.wma` → `.ogg`
-in the embedded filename). The tool verifies the 3-byte diff and
-refuses anything else. Never patch XNBs through a text encoding: a
-string round-trip silently corrupts binary bytes (learned the hard
-way during the original port; the corrupted build was discarded).
+- **XNB reader tables** (`tools/patch_xnb_readers.py`): custom-assembly
+  reader strings rewritten to the scaffold's single assembly name.
+- **Music (M7's other half):** your WMA tracks convert to OGG with
+  ffmpeg and each Song XNB is byte-patched (`.wma` → `.ogg`, exactly
+  3 bytes differ — `tools/patch_song_xnbs.py` verifies). The sound
+  manager itself needs no patch: the decompiled original already
+  loads and plays the converted tracks (Variant B).
+- **Case-fix duplicates** (`tools/fix_case_pass.py` +
+  `tools/inject_dupes.py` + `CaseFixContentManager`, whose installation
+  in the entry point is part of `Game.cs.patch` — **M5**): WP7's
+  case-insensitive content lookup emulated on Android's
+  case-sensitive asset system.
+- **Object-typed XNB members:** `ObjectFallbackReader.cs` (scaffold)
+  fills the reflective-reader slot MonoGame otherwise refuses.
 
-### P7 — Object-typed XNB members
-`src/scaffold/ObjectFallbackReader.cs`: a fallback content reader for
-object-typed reflective members in the game's XNB data, which
-MonoGame's reflective reader otherwise refuses to initialise for.
-In the original development builds this reader was appended to the
-reader table of packaged XNBs (build copies only).
+## Generated art
 
-## Documented but NOT automated (manual steps)
-
-These fixes were part of the original port's later polish builds. They
-are scaffold *copies of decompiled files* with small changes, so —
-unlike everything above — the fixed files themselves cannot be
-distributed, and the pipeline does not yet generate them. Each entry
-describes the change precisely enough to reproduce it on your own
-decompiled copy. A build without them is the playable Phase-3-level
-port; these are quality fixes on top.
-
-- **M1 — Coin rendering (`CIwRenderableModel.cs` copy).** Coins
-  rendered with wrong colours: the fix orders transparent model parts
-  explicitly and keys shadow parts separately in the renderable's
-  part-sorting path. (The diagnostic markers used during development
-  are not part of the fix.)
-- **M2 — Dialogue wrap (`CIwRenderableTextureSpec.cs` copy).** Texture
-  specs baked their scale from the live viewport on a background load
-  thread, racing the main loop's viewport cycle and collapsing
-  dialogue text to one word per line. The fix bakes against the fixed
-  design viewport (480×800) instead of the live one.
-- **M3 — Decorated-text end caps (`CIwDecoratedText.cs` copy).** The
-  left/right end caps were drawn at native texture scale while the
-  text path was scaled; the fix scales only the cap branch by
-  `viewport.Width / 480f` (and the right cap's X offset by the same
-  factor). Do not Y-flip anything to chase this — see docs/FIXES.md.
-- **M4 — Startup hang (`CFabMobGame.cs` copy).** Two changes:
-  pre-cache the splash font on the main thread before the background
-  load thread starts, and reorder the end of the first load phase so
-  the level-manager preload completes before the load-complete signal
-  fires.
-- **M5 — Case-fix wiring.** Installing `CaseFixContentManager` as the
-  game's `Content` (one assignment where the scaffold creates the game)
-  activates the runtime half of P5.
-- **M6 — Aspect / HD presentation.** The shipped development builds
-  render the world to a full-resolution render target, present it
-  without letterbox distortion at any aspect, and interpolate the
-  player puck between 30 Hz logic steps (`FcgInterp.cs`, included).
-  The render-target plumbing lives in the patched game/scaffold files
-  covered by M1–M4; reproducing it is manual work guided by
-  docs/FIXES.md.
-- **M7 — Global leaderboards.** The online backend client from the
-  later development builds is not included in this repository (it was
-  written against a specific hosted project). `docs/LEADERBOARDS.md`
-  specifies the interface so you can implement it against your own
-  backend.
+The development builds' dialog button/flourish art and adaptive-icon
+art were derived from game art, so they are not distributed.
+`tools/generate_dialog_art.py` draws original substitutes at build
+time (same parchment/gold palette, same pixel sizes, a true 9-patch
+button), and the launcher icons are generated from your own XAP's
+thumbnail (legacy + adaptive foreground; generated parchment
+background). The username dialog's font is Cinzel (SIL OFL 1.1,
+`src/assets/fonts/`), as in the development builds.
 
 ## Never patched
-Save format, level data, physics, scoring, achievement thresholds, and
-all gameplay logic compile from your decompiled tree exactly as
+
+Save format, level data, physics, scoring, achievement thresholds,
+and all gameplay logic compile from your decompiled tree exactly as
 decompiled.

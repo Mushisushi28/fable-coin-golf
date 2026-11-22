@@ -1,0 +1,12 @@
+--- a/Tech/CGameOverState.cs
++++ b/Tech/CGameOverState.cs
+@@ -54,7 +54,8 @@
+ 	public override void Render()
+ 	{
+ 		CIwXnaRenderState.Instance.SpriteRenderer.Begin();
+-		CIwXnaRenderState.Instance.SpriteRenderer.Draw(m_SplashScreensTextures[m_CurrentScreen], new Vector2(0f, 0f), Color.White);
++		Viewport fcgVp = CIwXnaRenderState.Instance.SpriteRenderer.GraphicsDevice.Viewport;
++		CIwXnaRenderState.Instance.SpriteRenderer.Draw(m_SplashScreensTextures[m_CurrentScreen], new Rectangle(0, 0, fcgVp.Width, fcgVp.Height), Color.White); // TRACK-C WS2: cover screens are authored to fill the (WP7 480x800) viewport; draw to the full current viewport so the 1080x1800 RT does not shrink them to native texture pixels
+ 		CIwXnaRenderState.Instance.SpriteRenderer.End();
+ 	}
+ 

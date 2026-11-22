@@ -1,0 +1,127 @@
+--- a/Tech/CMainMenuSubState.cs
++++ b/Tech/CMainMenuSubState.cs
+@@ -176,17 +176,69 @@
+ 		CIwEnt childByName2 = childByName.GetChildByName("bronzeCounter", assertIfNull: true);
+ 		CIwRenderableText component4 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component4.SetText(num2.ToString());
++		// Top-strip totals: see SetTopStripText (smaller font + re-centre;
++		// the template leaves them sitting on the strip's bottom border).
++		SetTopStripText(component4);
+ 		childByName2 = childByName.GetChildByName("silverCounter", assertIfNull: true);
+ 		component4 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component4.SetText(num3.ToString());
++		SetTopStripText(component4);
+ 		childByName2 = childByName.GetChildByName("goldCounter", assertIfNull: true);
+ 		component4 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component4.SetText(num4.ToString());
++		SetTopStripText(component4);
+ 		childByName2 = childByName.GetChildByName("levelUnlockCounter", assertIfNull: true);
+ 		component4 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component4.SetText(num + "/" + chapter.Levels.Count);
++		SetTopStripText(component4);
+ 		return cIwMenu;
+ 	}
++
++	// The menu templates position text by its line-box top, but the visible
++	// glyphs sit below the line-box top (Charlemagne's crop offset) and the
++	// template margins were tuned for the 480x800 design aspect. On a taller
++	// phone aspect the margins overshoot, so the text renders too low against
++	// its card/image. Override the top margin (native px, scaled by FcgScale
++	// at draw time) to centre the visible glyphs. Measured on device
++	// screenshots (1248x1972): chapter headings overlapped the top of their
++	// landscape images by ~10px, and the medal-count numbers sat at the very
++	// bottom edge of their cards with no padding below.
++	private void SetTextTopMargin(CIwRenderableText text, float topMargin)
++	{
++		CIwRenderableText.TextDisplay td = text.GetTextDisplay();
++		td.Margins[1] = topMargin;
++		text.SetRenderAssets(ref td);
++	}
++
++	// (CA1416 below is the same platform-compat warning the decompiled
++	// text code already emits thousands of, e.g. every MeasureString call
++	// in CIwRenderableText.cs; silenced here so this fix adds no new ones.)
++#pragma warning disable CA1416
++	// Top-strip totals (bronze/silver/gold/level counts under the medals).
++	// The band between the medals' drop shadows (dark cores down to ~y344
++	// on device screenshots, 1248x1972) and the gold rule (~y389) is only
++	// ~45px tall, while Charlemagne14pt digits are ~33px tall, so 8px clear
++	// on both sides is geometrically impossible at 14pt (33+8+8=49>45):
++	// margin-only lifts were tried at -10 (collides with the medals), -4
++	// (3-5px under the rims), -2 (1-7px under the shadows) and -0.5 (2-5px
++	// under the shadow cores). So these four totals drop to Charlemagne10pt
++	// (~24px digits, same typeface, already loaded at startup) with a +2.9f
++	// top margin, putting the glyph tops at ~y354: 9px under the worst
++	// shadow core, ~11px above the rule, centred in the band. The text is
++	// left-aligned and the frames were tuned so the 14pt text lands centred
++	// under its medal, so half the width lost to the smaller font is added
++	// to the left margin to keep each total centred.
++	private void SetTopStripText(CIwRenderableText text)
++	{
++		CIwRenderableText.TextDisplay td = text.GetTextDisplay();
++		float oldWidth = td.Font.MeasureString(td.TextString).X;
++		td.Font = CIwXnaContentManager.Instance.Load<Microsoft.Xna.Framework.Graphics.SpriteFont>("fonts/Charlemagne10pt");
++		float newWidth = td.Font.MeasureString(td.TextString).X;
++		td.Margins[0] += (oldWidth - newWidth) / 2f;
++		td.Margins[1] = 2.9f;
++		text.SetRenderAssets(ref td);
++	}
++#pragma warning restore CA1416
+ 
+ 	private CIwMenu CreateChaptersMenu(CIwMenu prevMenu)
+ 	{
+@@ -250,21 +302,32 @@
+ 			cIwEnt3.AddChild(cIwEnt4);
+ 			CIwRenderableText component2 = cIwEnt4.GetComponent<CIwRenderableText>(2);
+ 			component2.SetText(num6.ToString());
++			// Lift the medal-count numbers off the bottom edge of the card:
++			// the template margin (132) leaves them with no padding below.
++			// 120 gives them the same breathing room as the heading.
++			SetTextTopMargin(component2, 120f);
+ 			cIwEnt4 = CIwMenu.CreateEnt("chapter_silver_medals_string_template");
+ 			cIwEnt3.AddChild(cIwEnt4);
+ 			component2 = cIwEnt4.GetComponent<CIwRenderableText>(2);
+ 			component2.SetText(num7.ToString());
++			SetTextTopMargin(component2, 120f);
+ 			cIwEnt4 = CIwMenu.CreateEnt("chapter_gold_medals_string_template");
+ 			cIwEnt3.AddChild(cIwEnt4);
+ 			component2 = cIwEnt4.GetComponent<CIwRenderableText>(2);
+ 			component2.SetText(num8.ToString());
++			SetTextTopMargin(component2, 120f);
+ 			CIwEnt cIwEnt5 = CIwMenu.CreateEnt("chapter_medals_count_string_template");
+ 			cIwEnt3.AddChild(cIwEnt5);
+ 			CIwRenderableText component3 = cIwEnt5.GetComponent<CIwRenderableText>(2);
+ 			string text = num6 + num7 + num8 + "/" + CSettings.LevelTable.AllChapters[i].Levels.Count;
+ 			component3.SetText(text);
++			SetTextTopMargin(component3, 120f);
+ 			CIwRenderableText component4 = cIwEnt3.GetComponent<CIwRenderableText>(2);
+ 			component4.SetText(CSettings.IsTrialMode ? fabmob.TRIAL_TITLE : chapter.GetLocalisationString());
++			// Centre the heading in the parchment strip above the landscape
++			// image: the template margin (33) drops it ~30px too low, so it
++			// overlaps the top of the image. 21 centres it in the strip.
++			SetTextTopMargin(component4, 21f);
+ 			if (chapter.Locked)
+ 			{
+ 				CIwEnt pChild2 = CIwMenu.CreateEnt("chapter_lock_template");
+@@ -284,15 +347,21 @@
+ 		CIwEnt childByName2 = childByName.GetChildByName("bronzeCounter", assertIfNull: true);
+ 		CIwRenderableText component5 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component5.SetText(num.ToString());
++		// Top-strip totals: see SetTopStripText (smaller font + re-centre;
++		// the template leaves them sitting on the strip's bottom border).
++		SetTopStripText(component5);
+ 		childByName2 = childByName.GetChildByName("silverCounter", assertIfNull: true);
+ 		component5 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component5.SetText(num2.ToString());
++		SetTopStripText(component5);
+ 		childByName2 = childByName.GetChildByName("goldCounter", assertIfNull: true);
+ 		component5 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component5.SetText(num3.ToString());
++		SetTopStripText(component5);
+ 		childByName2 = childByName.GetChildByName("levelUnlockCounter", assertIfNull: true);
+ 		component5 = childByName2.GetComponent<CIwRenderableText>(2);
+ 		component5.SetText(num4 + "/" + num5);
++		SetTopStripText(component5);
+ 		return cIwMenu;
+ 	}
+ 

@@ -1,0 +1,47 @@
+--- a/Tech/CIwRenderableTexture.cs
++++ b/Tech/CIwRenderableTexture.cs
+@@ -53,11 +53,41 @@
+ 				{
+ 					Vector2 posInPixels = component.GetPosInPixels();
+ 					Vector2 sizeInPixels = component.GetSizeInPixels();
+-					posInPixels.X -= viewport2.X;
+-					posInPixels.Y -= viewport2.Y;
++					// FULLASPECT (2026-11-15, scaffold copy): a frame's size is a
++					// fraction of the current viewport on BOTH axes, so away from
++					// the 480x800 design aspect the drawn texture would stretch by
++					// the aspect change. Correct the drawn height to the WIDTH
++					// scale (the uniform scale the text path already uses,
++					// viewport.Width / 480): the art keeps its authored proportions,
++					// centred vertically in its layout slot; positions stay
++					// fraction-based, so the layout fills the real screen. An
++					// element spanning the whole viewport (a background) is drawn
++					// COVER instead â€” one uniform scale that fills the screen,
++					// centred, cropping the overflow equally on both sides;
++					// backgrounds are not interactive, so nothing tappable is
++					// ever cropped. corr == 1 at the design aspect (no-op there).
++					Vector2 drawPos = posInPixels;
++					Vector2 drawSize = sizeInPixels;
++					float vpW = viewport.Width;
++					float vpH = viewport.Height;
++					bool fullScreen = m_TexturedRect.UvRectangle.Width != 0 && m_TexturedRect.UvRectangle.Height != 0 && System.Math.Abs(sizeInPixels.X - vpW) <= 1.5f && System.Math.Abs(sizeInPixels.Y - vpH) <= 1.5f && System.Math.Abs(posInPixels.X) <= 1.5f && System.Math.Abs(posInPixels.Y) <= 1.5f;
++					if (fullScreen)
++					{
++						float cover = System.Math.Max(vpW / System.Math.Abs((float)m_TexturedRect.UvRectangle.Width), vpH / System.Math.Abs((float)m_TexturedRect.UvRectangle.Height));
++						drawSize = new Vector2(m_TexturedRect.UvRectangle.Width * cover, m_TexturedRect.UvRectangle.Height * cover);
++						drawPos = new Vector2((vpW - System.Math.Abs(drawSize.X)) / 2f, (vpH - System.Math.Abs(drawSize.Y)) / 2f);
++					}
++					else
++					{
++						float corr = (800f * vpW) / (480f * vpH);
++						drawSize = new Vector2(sizeInPixels.X, sizeInPixels.Y * corr);
++						drawPos = new Vector2(posInPixels.X, posInPixels.Y + (sizeInPixels.Y - drawSize.Y) / 2f);
++					}
++					drawPos.X -= viewport2.X;
++					drawPos.Y -= viewport2.Y;
+ 					spriteRenderer.GraphicsDevice.Viewport = viewport2;
+ 					spriteRenderer.Begin();
+-					spriteRenderer.Draw(m_TexturedRect.Texture, new Vector2(posInPixels.X, posInPixels.Y), (Rectangle?)m_TexturedRect.UvRectangle, m_colour * base.Alpha, 0f, Vector2.Zero, new Vector2(sizeInPixels.X / (float)m_TexturedRect.UvRectangle.Width, sizeInPixels.Y / (float)m_TexturedRect.UvRectangle.Height), SpriteEffects.None, 0f);
++					spriteRenderer.Draw(m_TexturedRect.Texture, new Vector2(drawPos.X, drawPos.Y), (Rectangle?)m_TexturedRect.UvRectangle, m_colour * base.Alpha, 0f, Vector2.Zero, new Vector2(drawSize.X / (float)m_TexturedRect.UvRectangle.Width, drawSize.Y / (float)m_TexturedRect.UvRectangle.Height), SpriteEffects.None, 0f);
+ 					spriteRenderer.End();
+ 					spriteRenderer.GraphicsDevice.Viewport = viewport;
+ 				}

@@ -21,6 +21,7 @@ obj/
 # --- Local config / credentials: use your own, never commit ---
 appsettings.local.json
 leaderboard.local.json
+leaderboard.config.json
 *.keystore
 keystore.properties
 
@@ -28,3 +29,5 @@ keystore.properties
 .DS_Store
 Thumbs.db
 *.swp
+
+__pycache__/

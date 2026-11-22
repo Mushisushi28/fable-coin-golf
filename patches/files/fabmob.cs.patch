@@ -1,0 +1,38 @@
+--- a/Tech/Tech/localisation/fabmob.cs
++++ b/Tech/Tech/localisation/fabmob.cs
+@@ -631,6 +631,10 @@
+ 
+ 	public static string OPTIONS_MENU_SHOOT_CONTROL_TOGGLE => ResourceManager.GetString("OPTIONS_MENU_SHOOT_CONTROL_TOGGLE", resourceCulture);
+ 
++	public static string OPTIONS_MENU_USERNAME => ResourceManager.GetString("OPTIONS_MENU_USERNAME", resourceCulture);
++
++	public static string OPTIONS_MENU_USERNAME_SET => ResourceManager.GetString("OPTIONS_MENU_USERNAME_SET", resourceCulture);
++
+ 	public static string OPTIONS_MENU_VOLUME_TOGGLE => ResourceManager.GetString("OPTIONS_MENU_VOLUME_TOGGLE", resourceCulture);
+ 
+ 	public static string OTIONS_MENU_TITLE => ResourceManager.GetString("OTIONS_MENU_TITLE", resourceCulture);
+@@ -836,6 +840,24 @@
+ 	public static string WEAPON4 => ResourceManager.GetString("WEAPON4", resourceCulture);
+ 
+ 	public static string WEAPON5 => ResourceManager.GetString("WEAPON5", resourceCulture);
++
++	public static string USERNAME_CHECKING => ResourceManager.GetString("USERNAME_CHECKING", resourceCulture);
++
++	public static string USERNAME_DIALOG_CANCEL => ResourceManager.GetString("USERNAME_DIALOG_CANCEL", resourceCulture);
++
++	public static string USERNAME_DIALOG_HINT => ResourceManager.GetString("USERNAME_DIALOG_HINT", resourceCulture);
++
++	public static string USERNAME_DIALOG_MESSAGE => ResourceManager.GetString("USERNAME_DIALOG_MESSAGE", resourceCulture);
++
++	public static string USERNAME_DIALOG_SAVE => ResourceManager.GetString("USERNAME_DIALOG_SAVE", resourceCulture);
++
++	public static string USERNAME_DIALOG_TITLE => ResourceManager.GetString("USERNAME_DIALOG_TITLE", resourceCulture);
++
++	public static string USERNAME_INVALID => ResourceManager.GetString("USERNAME_INVALID", resourceCulture);
++
++	public static string USERNAME_NO_CONNECTION => ResourceManager.GetString("USERNAME_NO_CONNECTION", resourceCulture);
++
++	public static string USERNAME_TAKEN => ResourceManager.GetString("USERNAME_TAKEN", resourceCulture);
+ 
+ 	public static string WEAPON6 => ResourceManager.GetString("WEAPON6", resourceCulture);
+ 

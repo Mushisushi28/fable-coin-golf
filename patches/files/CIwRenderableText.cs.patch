@@ -1,0 +1,101 @@
+--- a/Tech/CIwRenderableText.cs
++++ b/Tech/CIwRenderableText.cs
+@@ -33,6 +33,26 @@
+ 
+ 	private TextDisplay m_Text;
+ 
++	// TRACK-C WS2: runtime text is drawn with SpriteBatch at the font atlas's
++	// native pixel size, while every layout quantity around it (frame pos/size
++	// in pixels) scales with the current viewport. On the 480x800 WP7 viewport
++	// the two spaces coincide; in the 1080x1800 render target they diverge by
++	// 2.25x and text renders small + misaligned. FcgScale() restores the WP7
++	// proportion: it is exactly 1 on a 480-wide viewport (all Update-time
++	// layout, where the scaffold pins the viewport to 480x800) and 2.25 while
++	// rendering into the upscale target.
++	private static float FcgScale()
++	{
++		try
++		{
++			return CIwXnaRenderState.Instance.Graphics.Viewport.Width / 480f;
++		}
++		catch
++		{
++			return 1f;
++		}
++	}
++
+ 	private List<string> m_ParsedText = new List<string>();
+ 
+ 	public void SetText(string text)
+@@ -98,7 +118,7 @@
+ 		{
+ 			Vector2 result = default(Vector2);
+ 			Vector2 sizeInPixels = component.GetSizeInPixels();
+-			sizeInPixels.Y -= m_Text.Margins[1] + m_Text.Margins[3];
++			sizeInPixels.Y -= (m_Text.Margins[1] + m_Text.Margins[3]) * FcgScale(); // TRACK-C WS2
+ 			float num = TextHeight();
+ 			switch (m_Text.YAlign)
+ 			{
+@@ -107,17 +127,17 @@
+ 				break;
+ 			case YAlignment.eBottom:
+ 				result.Y = sizeInPixels.Y - num;
+-				result.Y += -m_Text.LineSpacing * (m_ParsedText.Count - 1);
++				result.Y += -m_Text.LineSpacing * FcgScale() * (m_ParsedText.Count - 1); // TRACK-C WS2
+ 				break;
+ 			case YAlignment.eCenter:
+ 				result.Y = (sizeInPixels.Y - num) / 2f;
+-				result.Y += -(m_Text.LineSpacing / 2) * (m_ParsedText.Count - 1);
++				result.Y += -(m_Text.LineSpacing * FcgScale() / 2) * (m_ParsedText.Count - 1); // TRACK-C WS2
+ 				break;
+ 			case YAlignment.eNone:
+ 				result.Y = 0f;
+ 				break;
+ 			}
+-			result.Y += m_Text.Margins[1];
++			result.Y += m_Text.Margins[1] * FcgScale(); // TRACK-C WS2
+ 			return result;
+ 		}
+ 		return default(Vector2);
+@@ -134,7 +154,7 @@
+ 				num += y;
+ 			}
+ 		}
+-		return num;
++		return num * FcgScale(); // TRACK-C WS2: height in current-viewport pixels, matching GetSizeInPixels()
+ 	}
+ 
+ 	private Vector2 AlignTextLineHorizontally(string textLine)
+@@ -147,8 +167,9 @@
+ 			Vector2 posInPixels = component.GetPosInPixels();
+ 			SpriteFont font = m_Text.Font;
+ 			Vector2 vector = font.MeasureString(textLine);
+-			posInPixels.X += m_Text.Margins[0];
+-			sizeInPixels.X -= m_Text.Margins[0] + m_Text.Margins[2];
++			vector.X *= FcgScale(); // TRACK-C WS2: measured width in current-viewport pixels
++			posInPixels.X += m_Text.Margins[0] * FcgScale(); // TRACK-C WS2
++			sizeInPixels.X -= (m_Text.Margins[0] + m_Text.Margins[2]) * FcgScale(); // TRACK-C WS2
+ 			switch (m_Text.XAlign)
+ 			{
+ 			case XAlignment.eLeft:
+@@ -243,6 +264,7 @@
+ 			CIwXnaRenderState instance = CIwXnaRenderState.Instance;
+ 			SpriteBatch spriteRenderer = instance.SpriteRenderer;
+ 			Viewport viewport = spriteRenderer.GraphicsDevice.Viewport;
++			float fcgScale = viewport.Width / 480f; // TRACK-C WS2
+ 			Viewport viewport2 = new Viewport(clipRectangle);
+ 			CIwUiFrame component = base.Owner.GetComponent<CIwUiFrame>(0);
+ 			if (component != null)
+@@ -267,10 +289,10 @@
+ 					using (CIwProfile.Scope("batch"))
+ 					{
+ 						spriteRenderer.Begin();
+-						spriteRenderer.DrawString(m_Text.Font, item, position, m_Text.Colour * base.Alpha, 0f, Vector2.Zero, new Vector2(1f), SpriteEffects.None, 0f);
++						spriteRenderer.DrawString(m_Text.Font, item, position, m_Text.Colour * base.Alpha, 0f, Vector2.Zero, new Vector2(fcgScale), SpriteEffects.None, 0f); // TRACK-C WS2: rasterise glyphs at viewport scale
+ 						spriteRenderer.End();
+ 					}
+-					position.Y += vector3.Y + (float)m_Text.LineSpacing;
++					position.Y += (vector3.Y + (float)m_Text.LineSpacing) * fcgScale; // TRACK-C WS2
+ 					spriteRenderer.GraphicsDevice.Viewport = viewport;
+ 				}
+ 			}

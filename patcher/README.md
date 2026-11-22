@@ -14,11 +14,16 @@ Stages, in order: `verify` → `extract` → `decompile` → `assemble` →
 when a prerequisite needs attention; the pipeline stops with the exact
 command or install step required rather than skipping silently.
 
-`apply_game_patch.py` is the one source transformation in the
-pipeline: it generates the patched entry point (`GamePatched.cs`)
-from your own decompiled `Game.cs`, verifies the two documented
-changes matched, and refuses — with a pointer to
-`patches/PATCHES.md` — if they don't.
+`apply_patches.py` is the source-transformation engine: it applies
+the 16 unified diffs in `patches/files/` (listed in
+`patch_manifest.json`) to your own decompiled files — 11 replacement
+files generated into the project, 5 leaderboard/localisation files
+patched in place in your work copy of the decompiled tree. Every hunk
+is verified against your files exactly; a mismatch refuses the build
+with the patch and hunk named. `patch_resx.py` does the equivalent
+verified edit for your localisation `.resx`. Together they reproduce
+the newest development build's source tree from your decompile —
+see `patches/PATCHES.md` for the per-file inventory.
 
 What is generated where:
 
@@ -32,8 +37,8 @@ work/     everything the pipeline generates (git-ignored):
 output/   FableCoinGolf.apk (git-ignored)
 ```
 
-Honest limits are listed in `docs/BUILDING.md` and
-`patches/PATCHES.md`: the chained pipeline reproduces the playable
-port with local leaderboards and restored music; several later polish
-fixes from the development builds are documented patch descriptions
-(M1–M7), not automation.
+The chained pipeline reproduces the newest development build
+(`fable-ui-fixes-2026-11-18` lineage) end to end: XAP in, that build
+out. The only build-time choices are your application id and the
+optional leaderboard backend config (`leaderboard.config.json`;
+absent = local boards).

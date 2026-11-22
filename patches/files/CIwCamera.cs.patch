@@ -1,0 +1,41 @@
+--- a/Tech/CIwCamera.cs
++++ b/Tech/CIwCamera.cs
+@@ -22,7 +22,37 @@
+ 	{
+ 		CIwCameraSpec spec = GetSpec<CIwCameraSpec>();
+ 		CIwXnaRenderState instance = CIwXnaRenderState.Instance;
+-		m_ProjMatrix = Matrix.CreatePerspectiveFieldOfView(spec.GetFov(), instance.Graphics.Viewport.AspectRatio, spec.GetNearDist(), spec.GetFarDist());
++		// FULLASPECT (2026-11-15, scaffold copy): dynamic-aspect projection.
++		// The aspect comes from the live backbuffer â€” the same size and
++		// aspect as the render target the scaffold renders into â€” not from
++		// the design-pinned Update viewport. On screens TALLER than the
++		// 480x800 design aspect the vertical FOV is widened so the
++		// HORIZONTAL field of view always equals the design reference:
++		// the course keeps its designed horizontal framing and MORE world
++		// becomes visible vertically. On wider screens the specced
++		// vertical FOV is kept (more world horizontally instead). The
++		// visible world never shrinks below the design framing on either
++		// axis. Presentation only: no gameplay state is touched.
++		float aspect = instance.Graphics.Viewport.AspectRatio;
++		try
++		{
++			Microsoft.Xna.Framework.Graphics.PresentationParameters pp = instance.Graphics.PresentationParameters;
++			if (pp.BackBufferWidth > 0 && pp.BackBufferHeight > 0)
++			{
++				aspect = pp.BackBufferWidth / (float)pp.BackBufferHeight;
++			}
++		}
++		catch
++		{
++		}
++		float fov = spec.GetFov();
++		float designAspect = 480f / 800f;
++		if (aspect > 0f && aspect < designAspect)
++		{
++			double halfTan = Math.Tan(fov / 2f) * (designAspect / aspect);
++			fov = (float)(2.0 * Math.Atan(halfTan));
++		}
++		m_ProjMatrix = Matrix.CreatePerspectiveFieldOfView(fov, aspect, spec.GetNearDist(), spec.GetFarDist());
+ 	}
+ 
+ 	public virtual void Exit()

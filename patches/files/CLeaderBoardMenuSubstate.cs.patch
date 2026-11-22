@@ -1,0 +1,262 @@
+--- a/Tech/CLeaderBoardMenuSubstate.cs
++++ b/Tech/CLeaderBoardMenuSubstate.cs
+@@ -1,3 +1,4 @@
++using System;
+ using System.Collections.Generic;
+ using System.Linq;
+ using Microsoft.Xna.Framework;
+@@ -7,13 +8,6 @@
+ 
+ internal class CLeaderBoardMenuSubstate : CIwObjectState
+ {
+-	private struct CAvatarEntry
+-	{
+-		public string GamerTag;
+-
+-		public CIwEnt LeaderboardEntryEnt;
+-	}
+-
+ 	private struct CLeaderboards
+ 	{
+ 		public IEnumerable<CLeaderboardEntry> TopLeaderboard;
+@@ -27,17 +21,11 @@
+ 
+ 	public static CLeaderBoardMenuSubstate Instance;
+ 
+-	private int m_AvatarSyncIndex = -1;
+-
+-	private List<CAvatarEntry> m_LeaderboardAvatars;
+-
+ 	private bool m_NeedsRefresh;
+ 
+ 	private bool m_ActivePage;
+ 
+ 	private bool m_Syncing;
+-
+-	private bool m_NeedToConnect;
+ 
+ 	private CSettings.LeaderboardID m_CurrentLeaderboardSync;
+ 
+@@ -52,14 +40,13 @@
+ 	{
+ 		m_ActivePage = true;
+ 		m_NeedsRefresh = false;
+-		m_NeedToConnect = false;
+ 		CIwMenuManager.Instance.Reset();
+-		m_LeaderboardAvatars = new List<CAvatarEntry>();
+-		m_AvatarSyncIndex = -1;
+ 		if (!m_Syncing)
+ 		{
+ 			m_Syncing = true;
+-			CIwXBOXLiveWrapper.SignInGamer(GamerSignedInCallback);
++			// Global boards are public: no sign-in. Read the first board
++			// directly; HandleEndSyncLeaderboard chains the rest.
++			SyncLeaderboards(CSettings.LeaderboardID.Overall);
+ 		}
+ 		for (int i = 0; i < Enumerable.Count<CLeaderboards>((IEnumerable<CLeaderboards>)m_Leaderboards); i++)
+ 		{
+@@ -69,68 +56,34 @@
+ 		RepopulateLeaderBoardMenu();
+ 	}
+ 
+-	private void GamerSignedInCallback(object sender, SignedInEventArgs args)
+-	{
+-		SignedInGamer gamer = args.Gamer;
+-		if (CIwXBOXLiveWrapper.IsSignedIntoLive(gamer))
+-		{
+-			SyncLeaderboards(CSettings.LeaderboardID.Overall);
++	private void SyncLeaderboards(CSettings.LeaderboardID leaderboard)
++	{
++		if (!m_ActivePage)
++		{
++			m_Syncing = false;
+ 			return;
+ 		}
+-		m_NeedToConnect = true;
+-		m_NeedsRefresh = true;
+-	}
+-
+-	private void SyncLeaderboards(CSettings.LeaderboardID leaderboard)
++		m_CurrentLeaderboardSync = leaderboard;
++		CLeaderboardService.GetBoardWithOwnRank(CLeaderboardService.BoardForMenu((int)leaderboard), 10, OnEndReadMainLeaderboard);
++	}
++
++	private void OnEndReadMainLeaderboard(List<CLeaderboardEntry> topEntries, CLeaderboardEntry ownEntry)
+ 	{
+ 		if (!m_ActivePage)
+ 		{
+ 			m_Syncing = false;
+-			return;
+-		}
+-		m_CurrentLeaderboardSync = leaderboard;
+-		CIwXBOXLiveWrapper.ReadLeaderboard(LeaderboardKey.BestScoreLifeTime, (int)leaderboard, OnEndReadMainLeaderboard, pivotGamer: false, 10);
+-	}
+-
+-	private void OnEndReadMainLeaderboard(IEnumerable<CLeaderboardEntry> entries)
+-	{
+-		if (!m_ActivePage)
+-		{
+-			m_Syncing = false;
+-		}
+-		else if (entries != null)
+-		{
+-			m_Leaderboards[(int)m_CurrentLeaderboardSync].TopLeaderboard = entries;
+-			foreach (CLeaderboardEntry entry in entries)
+-			{
+-				SignedInGamer signedInGamer = CIwXBOXLiveWrapper.GetSignedInGamer();
+-				if (signedInGamer != null && entry.Tag == CIwXBOXLiveWrapper.GetGamerTag(signedInGamer))
+-				{
+-					HandleEndSyncLeaderboard(error: false);
+-					return;
+-				}
+-			}
+-			CIwXBOXLiveWrapper.ReadLeaderboard(LeaderboardKey.BestScoreLifeTime, (int)m_CurrentLeaderboardSync, OnEndReadGamerEntry, pivotGamer: true, 1);
++		}
++		else if (topEntries != null)
++		{
++			m_Leaderboards[(int)m_CurrentLeaderboardSync].TopLeaderboard = topEntries;
++			m_Leaderboards[(int)m_CurrentLeaderboardSync].GamerLeaderboardEntry = ownEntry;
++			HandleEndSyncLeaderboard(error: false);
+ 		}
+ 		else
+ 		{
+ 			m_Leaderboards[(int)m_CurrentLeaderboardSync].Errored = true;
+ 			HandleEndSyncLeaderboard(error: true);
+ 		}
+-	}
+-
+-	private void OnEndReadGamerEntry(IEnumerable<CLeaderboardEntry> entries)
+-	{
+-		if (!m_ActivePage)
+-		{
+-			m_Syncing = false;
+-			return;
+-		}
+-		if (entries != null && Enumerable.Count<CLeaderboardEntry>(entries) > 0)
+-		{
+-			m_Leaderboards[(int)m_CurrentLeaderboardSync].GamerLeaderboardEntry = Enumerable.First<CLeaderboardEntry>(entries);
+-		}
+-		HandleEndSyncLeaderboard(error: false);
+ 	}
+ 
+ 	private void HandleEndSyncLeaderboard(bool error)
+@@ -163,7 +116,6 @@
+ 			num = component.GetScrollPosDelta();
+ 			CIwMenuManager.Instance.PopMenu();
+ 		}
+-		m_LeaderboardAvatars.Clear();
+ 		CIwMenu cIwMenu = new CIwMenu("LeaderboardMenu", "mainMenuBackground");
+ 		cIwMenu.AddMenuItem(new CIwMenuItemSoftKey("MENU_SOFTKEY_BACK", CIwMenuItemSoftKey.SoftkeyRoles.LeftSoftkey, new CIwAction("backToMainMenu")), addLast: false);
+ 		CIwEnt cIwEnt = CIwMenu.CreateEnt("leaderboards_uicontainer_template");
+@@ -182,13 +134,7 @@
+ 			CIwEnt pChild = CIwMenu.CreateEnt("leaderboard_panel_header_main");
+ 			cIwEnt2.AddChild(pChild);
+ 			cIwEnt.AddChild(cIwEnt2);
+-			if (m_NeedToConnect)
+-			{
+-				SetRenderableText("leaderboard_panel_header_main", fabmob.LS_ERRORSYNCING, cIwEnt2);
+-				AddErrorPanel("leaderboardsPanelError", fabmob.LEADERBOARD_NO_SIGN_IN, ref deltaY, cIwEnt);
+-				flag = true;
+-			}
+-			else if (m_Leaderboards[i].TopLeaderboard != null)
++			if (m_Leaderboards[i].TopLeaderboard != null)
+ 			{
+ 				string @string = fabmob.ResourceManager.GetString((i > 0) ? $"LS_CHAPTER{i}" : "LS_OVERALL", fabmob.Culture);
+ 				SetRenderableText("leaderboard_panel_header_main", @string, cIwEnt2);
+@@ -199,8 +145,7 @@
+ 					foreach (CLeaderboardEntry item in m_Leaderboards[i].TopLeaderboard)
+ 					{
+ 						AddLeaderboardEntry((num2 % 2 == 0) ? "leaderboardsPanelMid1" : "leaderboardsPanelMid2", item, ref deltaY, cIwEnt);
+-						SignedInGamer signedInGamer = CIwXBOXLiveWrapper.GetSignedInGamer();
+-						if (signedInGamer != null && item.Tag == CIwXBOXLiveWrapper.GetGamerTag(signedInGamer))
++						if (CLeaderboardService.HasUsername && string.Equals(item.Tag, CLeaderboardService.Username, StringComparison.OrdinalIgnoreCase))
+ 						{
+ 							flag2 = true;
+ 						}
+@@ -235,11 +180,6 @@
+ 			CIwMenu.MoveEntity(cIwEnt4, ref deltaY, updateDelta: true, -0.00187f);
+ 			cIwEnt.AddChild(cIwEnt4);
+ 		}
+-		if (!m_Syncing && m_AvatarSyncIndex == -1 && m_LeaderboardAvatars.Count > 0)
+-		{
+-			m_AvatarSyncIndex = 0;
+-			CCloudConnectivity.GetAvatar(m_LeaderboardAvatars[m_AvatarSyncIndex].GamerTag, ImageCallback);
+-		}
+ 		cIwMenu.AddEnt(cIwEnt);
+ 		cIwMenu.AddEnt(CIwMenu.CreateEnt("mainMenuLayer1"));
+ 		cIwMenu.AddEnt(CIwMenu.CreateEnt("scroller_arrow_top"));
+@@ -268,17 +208,14 @@
+ 			message = entry.Tag;
+ 		}
+ 		SetRenderableText("leaderboardsPanelMid_Name", message, cIwEnt);
++		// Centre the name in its brown bar: the template margin (42) leaves
++		// it ~20px too low on a tall phone aspect, spilling over the bar's
++		// bottom edge. 34 centres the visible glyphs in the bar.
++		SetTextTopMargin(cIwEnt.GetChildByName("leaderboardsPanelMid_Name", assertIfNull: true).GetComponent<CIwRenderableText>(2), 34f);
+ 		CIwEnt cIwEnt2 = CIwMenu.CreateEnt((entry == null) ? "leaderboard_entry_image_chicken" : "leaderboard_entry_image_template", assertOnFailure: false);
+ 		cIwEnt.AddChild(cIwEnt2);
+ 		CIwMenu.MoveEntity(cIwEnt, ref delta, updateDelta: true, offsetDelta);
+ 		containerEnt.AddChild(cIwEnt);
+-		if (!m_Syncing && entry != null)
+-		{
+-			CAvatarEntry item = default(CAvatarEntry);
+-			item.GamerTag = entry.Tag;
+-			item.LeaderboardEntryEnt = cIwEnt2;
+-			m_LeaderboardAvatars.Add(item);
+-		}
+ 	}
+ 
+ 	private void AddErrorPanel(string template, string panelText, ref float delta, CIwEnt containerEnt)
+@@ -297,6 +234,21 @@
+ 		component.SetText(message);
+ 	}
+ 
++	// The menu templates position text by its line-box top, but the visible
++	// glyphs sit below the line-box top (Charlemagne's crop offset) and the
++	// template margins were tuned for the 480x800 design aspect. On a taller
++	// phone aspect the margins overshoot, so the text renders too low against
++	// its bar/card. Override the top margin (native px, scaled by FcgScale
++	// at draw time) to centre the visible glyphs. Measured on device
++	// screenshots (1248x1972): the entry name sat ~20px too low in its
++	// brown bar, spilling over the bar's bottom edge.
++	private void SetTextTopMargin(CIwRenderableText text, float topMargin)
++	{
++		CIwRenderableText.TextDisplay td = text.GetTextDisplay();
++		td.Margins[1] = topMargin;
++		text.SetRenderAssets(ref td);
++	}
++
+ 	public override void Update()
+ 	{
+ 		base.Update();
+@@ -309,8 +261,6 @@
+ 
+ 	public override void OnExit()
+ 	{
+-		m_LeaderboardAvatars.Clear();
+-		m_AvatarSyncIndex = -1;
+ 		m_ActivePage = false;
+ 		base.OnExit();
+ 	}
+@@ -327,21 +277,4 @@
+ 	{
+ 		CIwUiPageManager.Instance.Render();
+ 	}
+-
+-	public void ImageCallback(Texture2D texture)
+-	{
+-		if (m_AvatarSyncIndex < m_LeaderboardAvatars.Count && !m_Syncing)
+-		{
+-			if (texture != null)
+-			{
+-				CIwRenderableTexture component = m_LeaderboardAvatars[m_AvatarSyncIndex].LeaderboardEntryEnt.GetComponent<CIwRenderableTexture>(2);
+-				component.SetRenderAssets(texture);
+-			}
+-			m_AvatarSyncIndex++;
+-			if (m_AvatarSyncIndex < m_LeaderboardAvatars.Count)
+-			{
+-				CCloudConnectivity.GetAvatar(m_LeaderboardAvatars[m_AvatarSyncIndex].GamerTag, ImageCallback);
+-			}
+-		}
+-	}
+ }

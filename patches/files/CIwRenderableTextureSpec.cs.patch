@@ -1,0 +1,31 @@
+--- a/Tech/CIwRenderableTextureSpec.cs
++++ b/Tech/CIwRenderableTextureSpec.cs
+@@ -25,11 +25,20 @@
+ 		if (m_PixelRelativeSize)
+ 		{
+ 			CIwUiFrame component = pEnt.GetComponent<CIwUiFrame>(0);
+-			Viewport viewport = CIwXnaRenderState.Instance.Graphics.Viewport;
++			// FCG DEFECT-A FIX (staged 2026-11-14, see README-DROPIN.md in this
++			// folder and ../DEFECT-A-CREATION-RACE.md): bake the pixelRelative
++			// scale against the DESIGN viewport (480x800), never the live
++			// viewport. AddToEntity runs on the background "Load" thread while
++			// the main thread cycles Graphics.Viewport between the 480x800
++			// Update pin, the 1080x1800 render target and the fitted
++			// backbuffer; any non-480 sample baked here collapses dialogue
++			// text wrapping to one word per line. On WP7 the viewport was
++			// invariant 480x800, so this bake always cancelled against the
++			// parse-time size; the design constants restore that invariant.
+ 			Matrix mat = component.GetMatLocal();
+ 			Vector2 vector = new Vector2(1f, 1f);
+-			vector.X = Math.Abs((float)uvRectangle.Width / (float)viewport.Width);
+-			vector.Y = Math.Abs((float)uvRectangle.Height / (float)viewport.Height);
++			vector.X = Math.Abs((float)uvRectangle.Width / 480f);
++			vector.Y = Math.Abs((float)uvRectangle.Height / 800f);
+ 			mat.M11 *= vector.X;
+ 			mat.M22 *= vector.Y;
+ 			component.SetMatLocal(ref mat);
+@@ -42,3 +51,4 @@
+ 		return m_TexturedRect;
+ 	}
+ }
++

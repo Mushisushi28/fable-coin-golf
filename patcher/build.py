@@ -15,9 +15,15 @@ Stages (run individually with --stage, or all in order by default):
              the exact commands are printed and the stage stops —
              this step is NOT silently skipped)
   assemble   Build the work tree: scaffold + project template +
-             manifest + YOUR localisation .resx + GamePatched.cs
-             generated from YOUR Game.cs (patcher/apply_game_patch.py)
-             + the game's own thumbnail as the app icon
+             manifest + ALL source patches applied to YOUR decompiled
+             files (patcher/apply_patches.py + patch_manifest.json:
+             the 11 replacement files generated into the project, the
+             5 leaderboard/localisation files patched in place) +
+             YOUR localisation .resx patched (patcher/patch_resx.py) +
+             the username-dialog resources + Cinzel font + generated
+             dialog/icon art (tools/generate_dialog_art.py) + the
+             game's own thumbnail as the app icon + your leaderboard
+             backend config, if any (leaderboard.config.json)
   content    Stage Content/ into the project Assets, patch the XNB
              reader tables, convert the music (ffmpeg: WMA -> OGG),
              patch the Song XNBs, and run the case-fix pass
@@ -27,15 +33,18 @@ Stages (run individually with --stage, or all in order by default):
              zipalign, and re-sign with the standard debug keystore,
              producing output/FableCoinGolf.apk
 
-Honest status: every stage above is implemented and was used to
-produce the original port. The stages are chained, but this is not a
-fire-and-forget one-click installer — if a prerequisite is missing the
-pipeline stops at that stage with the exact command or install step
-needed, and later polish fixes listed in patches/PATCHES.md are
-documented manual steps, not automated ones. See docs/BUILDING.md.
+Honest status: every stage above is implemented; the pipeline
+reproduces the newest development build of the port (the
+fable-ui-fixes-2026-11-18 lineage) from your XAP — every source
+difference from a fresh decompile is an automated, verified patch in
+patches/files/, listed in patches/PATCHES.md. The stages are chained,
+but this is not a fire-and-forget one-click installer — if a
+prerequisite is missing the pipeline stops at that stage with the
+exact command or install step needed. See docs/BUILDING.md.
 """
 import argparse
 import glob
+import json
 import os
 import shutil
 import subprocess
@@ -135,25 +144,109 @@ def stage_assemble(args):
     os.makedirs(props, exist_ok=True)
     open(os.path.join(props, "AndroidManifest.xml"), "w",
          encoding="utf-8").write(manifest)
-    # Your localisation resource, from your decompiled tree.
+    # Your localisation resource, from your decompiled tree, patched
+    # (achievement rewording + the port's username strings).
     resx = os.path.join(WORK, "decompiled", "Tech",
                         "Tech.localisation.fabmob.resx")
     if not os.path.exists(resx):
         return die(f"missing {resx} — did the decompile stage complete?")
-    shutil.copyfile(resx, os.path.join(PROJ, "Tech.localisation.fabmob.resx"))
-    # GamePatched.cs, generated from your Game.cs.
-    rc = run([sys.executable, os.path.join(PATCHER, "apply_game_patch.py"),
-              os.path.join(WORK, "decompiled", "FabMob", "Game.cs"),
-              os.path.join(PROJ, "GamePatched.cs")])
+    rc = run([sys.executable, os.path.join(PATCHER, "patch_resx.py"),
+              resx, os.path.join(PROJ, "Tech.localisation.fabmob.resx")])
     if rc != 0:
-        return die("game patch failed — see patches/PATCHES.md, item P1.")
-    # The game's own thumbnail (from your XAP) as the launcher icon.
+        return die("resx patch failed — see patches/PATCHES.md.")
+    # Every source patch: replacement files generated into the project,
+    # leaderboard/localisation files patched in place in your work copy
+    # of the decompiled tree. Each patch verifies its hunks exactly and
+    # refuses on mismatch (wrong build / decompiler output).
+    rc = run([sys.executable, os.path.join(PATCHER, "apply_patches.py"),
+              "--manifest", os.path.join(PATCHER, "patch_manifest.json"),
+              "--decompiled", os.path.join(WORK, "decompiled"),
+              "--project", PROJ])
+    if rc != 0:
+        return die("source patches failed — see patches/PATCHES.md.")
+    # The cloud-connectivity replacement is an original scaffold file,
+    # not a patch: the csproj excludes the decompiled original and the
+    # scaffold copy (already copied above from src/scaffold/compat/)
+    # takes its place.
+    # Username-dialog resources (layout, theme, parchment drawable,
+    # adaptive-icon definition) — the port's own files.
+    res_src = os.path.join(REPO, "src", "resources")
+    for root, _dirs, files in os.walk(res_src):
+        rel = os.path.relpath(root, res_src)
+        for f in files:
+            dst_dir = os.path.join(PROJ, "Resources", rel)
+            os.makedirs(dst_dir, exist_ok=True)
+            shutil.copyfile(os.path.join(root, f), os.path.join(dst_dir, f))
+    # Cinzel (the dialog font, SIL OFL 1.1 — Assets/fonts/OFL.txt).
+    fonts_src = os.path.join(REPO, "src", "assets", "fonts")
+    fonts_dst = os.path.join(PROJ, "Assets", "fonts")
+    os.makedirs(fonts_dst, exist_ok=True)
+    for f in os.listdir(fonts_src):
+        shutil.copyfile(os.path.join(fonts_src, f),
+                        os.path.join(fonts_dst, f))
+    # Generated raster art: dialog button/flourish + adaptive-icon
+    # backgrounds (originals drawn by the tool — the development
+    # builds' game-derived art is not distributed).
+    rc = run([sys.executable, os.path.join(TOOLS, "generate_dialog_art.py"),
+              os.path.join(PROJ, "Resources")])
+    if rc != 0:
+        return die("dialog art generation failed")
+    # The game's own thumbnail (from your XAP) as the launcher icon:
+    # legacy icon + the adaptive icon's foreground, at every density.
     thumb = os.path.join(WORK, "extracted", "GameThumbnail.png")
     if os.path.exists(thumb):
-        mip = os.path.join(PROJ, "Resources", "mipmap-hdpi")
-        os.makedirs(mip, exist_ok=True)
-        shutil.copyfile(thumb, os.path.join(mip, "icon.png"))
+        for density in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+            mip = os.path.join(PROJ, "Resources", f"mipmap-{density}")
+            os.makedirs(mip, exist_ok=True)
+            shutil.copyfile(thumb, os.path.join(mip, "icon.png"))
+            shutil.copyfile(thumb, os.path.join(mip, "icon_foreground.png"))
+    # Leaderboard backend config (optional): your own project URL +
+    # anon key from leaderboard.config.json (or the FCG_SUPABASE_URL /
+    # FCG_SUPABASE_ANON_KEY environment variables) become the work
+    # tree's LeaderboardConfig.cs. Absent config = local boards only.
+    rc = write_leaderboard_config(args)
+    if rc != 0:
+        return rc
     print(f"assembled project -> {PROJ}")
+    return 0
+
+
+def write_leaderboard_config(args):
+    url = os.environ.get("FCG_SUPABASE_URL", "")
+    key = os.environ.get("FCG_SUPABASE_ANON_KEY", "")
+    cfg = os.path.join(REPO, "leaderboard.config.json")
+    if os.path.exists(cfg):
+        try:
+            data = json.load(open(cfg, encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return die(f"leaderboard.config.json is not valid JSON: {exc}")
+        url = data.get("supabase_url", url) or url
+        key = data.get("supabase_anon_key", key) or key
+    if not url and not key:
+        print("leaderboard config: none — local leaderboards only "
+              "(see docs/LEADERBOARDS.md to add your own backend)")
+        return 0
+    if not url or not key:
+        return die("leaderboard config needs BOTH supabase_url and "
+                   "supabase_anon_key (or neither).")
+
+    def esc(s):
+        return s.replace("\\", "\\\\").replace('"', '\\"')
+
+    body = (
+        "// LeaderboardConfig - GENERATED by patcher/build.py from your\n"
+        "// leaderboard.config.json. Do not commit this generated file\n"
+        "// with real values into a public fork.\n"
+        "public static class LeaderboardConfig\n"
+        "{\n"
+        f"\tpublic const string SupabaseUrl = \"{esc(url)}\";\n"
+        f"\tpublic const string AnonKey = \"{esc(key)}\";\n"
+        "}\n")
+    with open(os.path.join(PROJ, "LeaderboardConfig.cs"), "w",
+              encoding="utf-8", newline="\n") as fh:
+        fh.write(body)
+    print("leaderboard config: backend configured from "
+          "leaderboard.config.json / environment")
     return 0
 
 
@@ -227,13 +320,22 @@ def stage_package(args):
     bt = bt[-1]
     aligned = os.path.join(WORK, "aligned.apk")
     final = os.path.join(out_dir, "FableCoinGolf.apk")
-    if run([os.path.join(bt, "zipalign"), "-f", "-p", "4",
-            work_apk, aligned]) != 0:
+
+    def tool(name):
+        # Windows SDK ships zipalign.exe but apksigner as a .bat, which
+        # CreateProcess cannot start directly — wrap .bat in cmd /c.
+        for cand in (name + ".exe", name + ".bat", name):
+            p = os.path.join(bt, cand)
+            if os.path.exists(p):
+                return ["cmd", "/c", p] if cand.endswith(".bat") else [p]
+        return [os.path.join(bt, name)]
+
+    if run(tool("zipalign") + ["-f", "-p", "4",
+                               work_apk, aligned]) != 0:
         return die("zipalign failed")
     keystore = os.path.expandvars(
         r"%LocalAppData%\Xamarin\Mono for Android\debug.keystore")
-    signer = os.path.join(bt, "apksigner")
-    rc = run([signer, "sign", "--ks", keystore,
+    rc = run(tool("apksigner") + ["sign", "--ks", keystore,
               "--ks-key-alias", "androiddebugkey",
               "--ks-pass", "pass:android", "--key-pass", "pass:android",
               "--out", final, aligned])

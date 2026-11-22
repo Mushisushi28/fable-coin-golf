@@ -1,0 +1,30 @@
+--- a/Tech/CFabMobGame.cs
++++ b/Tech/CFabMobGame.cs
+@@ -104,6 +104,12 @@
+ 			CLoadingState.Instance.EraseTimer += EraseTimer;
+ 			CIwGameClock.Instance = new CIwGameClock();
+ 			ContentLoadStarted = true;
++			// FABLE HANG FIX F2 (keeper 2026-11-14): pre-cache the splash start-screen font on the
++			// main thread BEFORE the Load thread starts, so CIwSplashScreens.SetupText's later
++			// Load returns from the m_Loaded cache (checked before m_ThreadLock is taken) and the
++			// main thread never contends for the content lock during the load window
++			// (AB-BA deadlock vs MonoGame BlockOnUIThread - STARTUP-HANG-TRACE.md Trigger 1).
++			CIwXnaContentManager.Instance.Load<SpriteFont>("fonts/Charlemagne14pt");
+ 			Thread thread = new Thread(LoadPhase1);
+ 			thread.Name = "Load";
+ 			thread.Start();
+@@ -136,9 +142,13 @@
+ 		CAbilityManager.Instance.LoadAbilities();
+ 		CLevelLogicManager.Instance.LoadLevelLogics();
+ 		Thread.MemoryBarrier();
+-		CLoadingState.Instance.LoadComplete();
+ 		CIwDebugDisplay.Instance.Init();
+ 		CLevelManager.Instance.Preload();
++		// FABLE HANG FIX F1 (keeper 2026-11-14): LoadComplete moved AFTER Preload. It used
++		// to fire before Preload, letting the main thread leave the loading state and load
++		// content while the Load thread still held m_ThreadLock (STARTUP-HANG-TRACE.md
++		// Trigger 2). LoadComplete only sets m_loaded; nothing in Preload depends on it.
++		CLoadingState.Instance.LoadComplete();
+ 	}
+ 
+ 	[Conditional("DEBUG")]

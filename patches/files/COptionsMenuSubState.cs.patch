@@ -1,0 +1,95 @@
+--- a/Tech/COptionsMenuSubState.cs
++++ b/Tech/COptionsMenuSubState.cs
+@@ -12,6 +12,13 @@
+ 
+ 	private CIwEnt m_FireButtonEnt;
+ 
++	// Global leaderboard username. Same menu_button_template art as every
++	// other item on this screen, so it matches by construction; only the
++	// button text is dynamic (the current username, or "Set Username").
++	private CIwMenuItemAction m_UsernameMenu;
++
++	private CIwEnt m_UsernameEnt;
++
+ 	public COptionsMenuSubState(CIwObjectStateMachine owner)
+ 		: base(owner)
+ 	{
+@@ -23,12 +30,25 @@
+ 		RepopulateOptionsMenu();
+ 	}
+ 
++	public override void Update()
++	{
++		base.Update();
++		// A username claim completed while this screen was open: refresh
++		// the username button so it shows the new name.
++		if (CLeaderboardService.ConsumeUsernameChanged())
++		{
++			RefreshUsernameButton();
++		}
++	}
++
+ 	public override void OnExit()
+ 	{
+ 		m_SfxToggle = null;
+ 		m_VolumeToggle = null;
+ 		m_FireButtonMenu = null;
+ 		m_FireButtonEnt = null;
++		m_UsernameMenu = null;
++		m_UsernameEnt = null;
+ 		CSaveManager.Instance.DoSaveGameSettings();
+ 		CIwMenuManager.Instance.Close();
+ 	}
+@@ -53,6 +73,14 @@
+ 			CSaveManager.Instance.gameSaveData.Settings.ShootStyleFireOnRelease = !CSaveManager.Instance.gameSaveData.Settings.ShootStyleFireOnRelease;
+ 			string txt = (CSaveManager.Instance.gameSaveData.Settings.ShootStyleFireOnRelease ? "FIRE_BUTTON_OFF" : "FIRE_BUTTON_ON");
+ 			m_FireButtonMenu.ChangeButtonText(txt);
++		}
++		else if (action.ActionName == "editUsername")
++		{
++			// Native Android dialog (Activity1): the game has no text
++			// input of its own. Identity lives outside game.sav, so an
++			// in-app data reset keeps the username (see
++			// CLeaderboardService).
++			CLeaderboardService.BeginUsernameChange();
+ 		}
+ 		else if (action.ActionName == "resetData")
+ 		{
+@@ -111,9 +139,37 @@
+ 		string name = (CSaveManager.Instance.gameSaveData.Settings.ShootStyleFireOnRelease ? "FIRE_BUTTON_OFF" : "FIRE_BUTTON_ON");
+ 		m_FireButtonMenu = new CIwMenuItemAction(name, new CIwAction("controlsToggled"));
+ 		m_FireButtonEnt = cIwMenu.AddMenuItem(m_FireButtonMenu);
++		m_UsernameMenu = new CIwMenuItemAction("OPTIONS_MENU_USERNAME", new CIwAction("editUsername"));
++		m_UsernameEnt = cIwMenu.AddMenuItem(m_UsernameMenu);
++		RefreshUsernameButton();
+ 		cIwMenu.AddMenuItem(new CIwMenuItemAction("OPTIONS_MENU_RESET_DATA", cIwMenu2));
+ 		cIwMenu.AddEnt(CIwMenu.CreateEnt("mainMenuLayer1"));
+ 		cIwMenu.AddMenuItem(new CIwMenuItemSoftKey("MENU_SOFTKEY_BACK", CIwMenuItemSoftKey.SoftkeyRoles.LeftSoftkey, new CIwAction("backToMainMenu")), addLast: false);
+ 		cIwMenu.AddEnt(CIwMenu.CreateHeaderEnt("subMenuTitle", "HELP_OPTIONS_SETTINGS"));
+ 	}
++
++	// The username button shows the claimed name ("Username: Bob") or
++	// the "Set Username" label when no name is claimed. The button art
++	// itself is the standard menu_button_template, identical to the
++	// other items on this screen.
++	private void RefreshUsernameButton()
++	{
++		if (m_UsernameEnt == null)
++		{
++			return;
++		}
++		CIwDecoratedText component = m_UsernameEnt.GetComponent<CIwDecoratedText>(2);
++		if (component == null)
++		{
++			return;
++		}
++		if (CLeaderboardService.HasUsername)
++		{
++			component.SetText(string.Format(fabmob.OPTIONS_MENU_USERNAME_SET, CLeaderboardService.Username));
++		}
++		else
++		{
++			component.SetLocalisedStringId("OPTIONS_MENU_USERNAME");
++		}
++	}
+ }

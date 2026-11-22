@@ -53,9 +53,17 @@ This creates `work/src/FableCoinGolf.Android/` containing: every
 scaffold `.cs` from `src/scaffold/` (flattened, including `compat/`),
 the project file generated from `src/FableCoinGolf.Android.csproj.template`,
 `Properties/AndroidManifest.xml` from the template, your
-`Tech.localisation.fabmob.resx` copied from your decompiled tree,
-`GamePatched.cs` generated from your `decompiled/FabMob/Game.cs`, and
-the game's own thumbnail as `Resources/mipmap-hdpi/icon.png`.
+`Tech.localisation.fabmob.resx` **patched** by `patcher/patch_resx.py`,
+**all 16 source patches applied** by `patcher/apply_patches.py`
+(11 replacement files generated into the project — `GamePatched.cs`,
+the presentation/coin/dialogue/menu/hang/animation fixes — and
+5 leaderboard/localisation files patched in place in your work copy
+of `decompiled/`), the username-dialog resources from
+`src/resources/`, the Cinzel font in `Assets/fonts/`, generated
+dialog/icon art (`tools/generate_dialog_art.py`), the game's own
+thumbnail as the launcher icon at every density (legacy +
+adaptive foreground), and — if you created `leaderboard.config.json`
+— a generated `LeaderboardConfig.cs` with your backend settings.
 
 ## 5. Stage + patch the content
 
@@ -75,10 +83,15 @@ dotnet build -c Release work/src/FableCoinGolf.Android
 ```
 
 (Or `--stage build`.) The project links your decompiled sources; the
-only decompiled files excluded are `Game.cs` (replaced by
-`GamePatched.cs`), the `AssemblyInfo.cs` files, and
-`Tech/CCloudConnectivity.cs` (replaced by the local backend). First
-build restores `MonoGame.Framework.Android 3.8.2.1105` from NuGet.
+decompiled files excluded are `Game.cs` (replaced by the generated
+`GamePatched.cs`), the `AssemblyInfo.cs` files,
+`Tech/CCloudConnectivity.cs` (replaced by the local backend), and the
+11 Tech files whose patched copies the assemble stage generated
+(`CIwRenderableModel`, `CIwRenderableText`, `CIwRenderableTexture`,
+`CIwRenderableTextureSpec`, `CIwSplashScreens`, `CGameOverState`,
+`CIwAnimPlayer`, `CFabMobGame`, `CIwDecoratedText`, `CIwCamera` —
+see `patches/PATCHES.md`). First build restores
+`MonoGame.Framework.Android 3.8.2.1105` from NuGet.
 
 ## 7. Package
 
@@ -102,8 +115,13 @@ game's save.
   no-op Live stub never invoking its sign-in callback. The included
   local backend completes every call synchronously; if you see it,
   you built without `compat/`.
-- **Dialogue collapses to one word per line** — known defect, fix
-  described in `patches/PATCHES.md` (M2); not yet automated.
+- **Dialogue collapses to one word per line** — the defect the
+  `CIwRenderableTextureSpec.cs` patch fixes; if you see it, the build
+  was made without the patches (check the assemble-stage log).
+- **A patch refused during assemble** — your decompiled output does
+  not match the v1.0.8.10 / ilspycmd 8.2.0.7535 baseline the patches
+  target. Re-decompile with the pinned ilspycmd version rather than
+  editing patches to force a match.
 - **Music silent** — check the APK actually contains `.ogg` files
   under `assets/Content/data/music/` and no `.wma`, and that each Song
   XNB references its `.ogg`.

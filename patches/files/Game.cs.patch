@@ -1,0 +1,407 @@
+--- a/FabMob/Game.cs
++++ b/FabMob/Game.cs
+@@ -1,9 +1,12 @@
++// Scaffold-local patched copy of decompiled/FabMob/Game.cs — ONLY changes: OnExiting override removed + Environment.DeviceType fully qualified (see DECOMPILE-REPORT). Decompiled tree untouched.
+ using System;
+ using System.Reflection;
+ using Microsoft.Devices;
+ using Microsoft.Phone.Shell;
+ using Microsoft.Xna.Framework;
+ using Microsoft.Xna.Framework.GamerServices;
++using Microsoft.Xna.Framework.Graphics;
++using Microsoft.Xna.Framework.Input.Touch;
+ using Microsoft.Xna.Framework.Media;
+ 
+ public class Game : Microsoft.Xna.Framework.Game
+@@ -15,6 +18,78 @@
+ 	private GraphicsDeviceManager m_Graphics;
+ 
+ 	private CFabMobGame m_TheGame;
++
++	// Phase 3 scaling: engine renders at native 480x800 into this target;
++	// we upscale it to the full Android backbuffer (see Draw).
++	private RenderTarget2D m_ScaleRT;
++
++	private SpriteBatch m_ScaleBatch;
++
++	private bool m_FitDone;
++
++	// TRACK-C DIAGNOSTIC (temporary): draw/update cadence counters.
++	// TRACK-C WS3 (R3): fixed-step dispatch state.
++	private static readonly TimeSpan FcgQuantum = TimeSpan.FromTicks(333333L);
++	private TimeSpan m_FcgAcc;
++	private TimeSpan m_FcgLogicTotal;
++	private Microsoft.Xna.Framework.Vector3 m_FcgPuckPrev;
++	private Microsoft.Xna.Framework.Vector3 m_FcgPuckCur;
++	private bool m_FcgPuckSnapValid;
++
++	// FULLASPECT (2026-11-15): dynamic design window. The design WIDTH stays
++	// 480 (the WP7 invariant every layout fraction was authored against);
++	// the design HEIGHT derives from the live backbuffer aspect,
++	// designH = round(480 * bbH / bbW): 989 on the Pixel (1008x2077),
++	// exactly 800 on a design-aspect display. The Update viewport pin and
++	// TouchPanel.DisplayHeight both use this value, so layout, hit-testing
++	// and touch all share the one design space the engine renders.
++	private int m_DesignHeight = 800;
++
++	private int ComputeDesignHeight()
++	{
++		try
++		{
++			int bbW = m_Graphics.GraphicsDevice.PresentationParameters.BackBufferWidth;
++			int bbH = m_Graphics.GraphicsDevice.PresentationParameters.BackBufferHeight;
++			if (bbW > 0 && bbH > 0)
++			{
++				return Math.Max(1, (int)Math.Round(480.0 * bbH / bbW));
++			}
++		}
++		catch
++		{
++		}
++		return 800;
++	}
++
++	// Phase 3: size the backbuffer to the MonoGame game view itself so
++	// MonoGame's aspect-fit becomes the identity: ClientBounds == view
++	// rect at origin (0,0), the RT upscale blit fills the view exactly,
++	// and TouchPanel's DisplaySize/ClientBounds scale maps MotionEvent
++	// view px linearly into 480x800 game space. One mapping, no offsets,
++	// shared by rendering and by every touch consumer (all engine input
++	// funnels through TouchPanel via CIwInput).
++	private void FitBackBufferToView()
++	{
++		if (m_FitDone)
++		{
++			return;
++		}
++		try
++		{
++			Android.Views.View view = Services.GetService(typeof(Android.Views.View)) as Android.Views.View;
++			if (view != null && view.Width > 0 && view.Height > 0)
++			{
++				m_Graphics.PreferredBackBufferWidth = view.Width;
++				m_Graphics.PreferredBackBufferHeight = view.Height;
++				m_Graphics.ApplyChanges();
++				m_FitDone = true;
++			}
++		}
++		catch
++		{
++		}
++	}
+ 
+ 	public Game()
+ 	{
+@@ -23,11 +98,27 @@
+ 		PhoneApplicationService.Current.Launching += GameLaunching;
+ 		InitialMediaVolume = MediaPlayer.Volume;
+ 		m_Graphics = new GraphicsDeviceManager(this);
++		// Phase 3 compat: route every load through the case-fixing manager
++		// (Android AssetManager is case-sensitive; WP7 was not). Must be
++		// installed before CIwXnaContentManager captures base.Content below.
++		Content = new FableCoinGolfCompat.CaseFixContentManager(Services);
+ 		base.Content.RootDirectory = "Content/data";
+ 		base.TargetElapsedTime = TimeSpan.FromTicks(333333L);
++		base.IsFixedTimeStep = false; // TRACK-C WS3: framework runs variable-step; the scaffold dispatches fixed 30 Hz engine quanta itself (see Update) so Draw can present at display rate with interpolation.
+ 		m_Graphics.IsFullScreen = true;
+ 		m_Graphics.PreferredBackBufferWidth = 480;
+ 		m_Graphics.PreferredBackBufferHeight = 800;
++		// NOTE (Phase 3 touch audit): MonoGame aspect-fits this 480x800
++		// preference into the window, producing ClientBounds
++		// {0,199,1008,1679} — a letterbox whose offset is applied twice to
++		// rendering (surface presented at display y=511) but once to touch
++		// (MotionEvent origin at display y=312), measured 2026-11-13.
++		// FixApplied in FitBackBufferToView() below removes the letterbox
++		// by sizing the backbuffer to the game view itself.
++		// Report touches in the game's native 480x800 space (MonoGame scales
++		// window touches to TouchPanel.DisplayWidth/Height).
++		TouchPanel.DisplayWidth = 480;
++		TouchPanel.DisplayHeight = 800;
+ 		CIwConsole.Inst.RegisterHandler("TraceChannels", "Main", delegate
+ 		{
+ 		});
+@@ -60,15 +151,52 @@
+ 		{
+ 			text = text.Substring(0, num2);
+ 		}
++		// TRACK-C2 PHASE 2 (WS-B): the scaffold assembly carries no version
++		// (GenerateAssemblyInfo is off), so the parse above yields "0.0.0.0"
++		// and the Information screen showed "Version 0.0.0.0 (270202)". The
++		// WP7 original reported its assembly version: 1.0.8.10 (the same value
++		// the Android manifest carries as ApplicationDisplayVersion).
++		if (text == "0.0.0.0" || text.Length == 0)
++		{
++			text = "1.0.8.10";
++		}
+ 		object obj = text;
+ 		return string.Concat(obj, " (", 270202, ")");
+ 	}
+ 
+ 	protected override void Initialize()
+ 	{
++		// TRACK-B level-load crash fix: CIwRenderableMultiModel's ctor
++		// reads index data BACK from GPU IndexBuffers
++		// (IndexBuffer.GetData) to merge static level geometry — on
++		// OpenGL ES, buffers are write-only and GetData throws
++		// NotSupportedException (crash in CLevelStartSubstate.LoadContent,
++		// 2026-11-13 23:04:20). It is the ONLY GPU-buffer GetData in the
++		// entire engine (full-tree grep). The merge is a 2011-era
++		// draw-call optimization behind the engine's own supported
++		// switch: CreateMultiModelEntity early-outs when
++		// CSettings.UseMultiModels is false, and every model then renders
++		// itself via CIwRenderableModel.RenderMeshParts (GPU buffers used
++		// directly, WITH the frustum culling the merged path skips). A
++		// CPU-side index cache would have to hook inside MonoGame's
++		// reflective XNB read, where no scaffold hook exists; the
++		// settings seam achieves the same kill through supported code.
++		// Fallback if draw calls ever bite on big levels: pre-bake a
++		// per-(model,part) index sidecar offline and patch the ctor.
++		CSettings.UseMultiModels = false;
++		// TRACK-B: pin the graphics viewport to the game's 480x800 design
++		// space BEFORE the engine initializes (spec parsing and layout
++		// divide by viewport size; WP7 invariant: viewport == 480x800).
++		try
++		{
++			m_Graphics.GraphicsDevice.Viewport = new Viewport(0, 0, 480, 800);
++		}
++		catch
++		{
++		}
+ 		//IL_0016: Unknown result type (might be due to invalid IL or missing references)
+ 		m_TheGame.Initialize(m_Graphics.GraphicsDevice);
+-		if ((int)Environment.DeviceType == 0)
++		if ((int)Microsoft.Devices.Environment.DeviceType == 0)
+ 		{
+ 			GamerServicesComponent gamerServicesComponent = new GamerServicesComponent(this);
+ 			try
+@@ -94,6 +222,13 @@
+ 
+ 	protected override void LoadContent()
+ 	{
++		try
++		{
++			m_Graphics.GraphicsDevice.Viewport = new Viewport(0, 0, 480, 800);
++		}
++		catch
++		{
++		}
+ 		m_TheGame.ContMan = base.Content;
+ 	}
+ 
+@@ -104,11 +239,99 @@
+ 
+ 	protected override void Update(GameTime gameTime)
+ 	{
++		FitBackBufferToView();
++		// Phase 3 touch fix: the engine hit-tests TouchPanel positions directly
++		// against 480x800 UI rects (WP7 contract: positions arrive in display
++		// units). MonoGame Android resets TouchPanel.DisplaySize to the client
++		// size (1008x1679) when the surface is created — after our ctor set
++		// 480x800 — which collapses its touch scale to 1:1 and delivers raw
++		// surface pixels. Re-assert the game's display size every frame so
++		// _touchScale = (480/1008, 800/1679) maps surface px into game space,
++		// the exact inverse of the render upscale.
++		// FULLASPECT: the design height follows the live backbuffer aspect
++		// (see ComputeDesignHeight); TouchPanel maps surface px into the
++		// same 480 x designH space the viewport pin below defines, so a
++		// touch at surface fraction f lands at design fraction f on both
++		// axes, at any display aspect.
++		m_DesignHeight = ComputeDesignHeight();
++		TouchPanel.DisplayWidth = 480;
++		TouchPanel.DisplayHeight = m_DesignHeight;
++		// TRACK-B single-space fix (replaces the Phase 3 FCGTOUCH probe —
++		// the probe is DELETED: its per-frame TouchPanel.GetState() call
++		// ages Pressed->Moved and trashes unseen press+release pairs
++		// before the engine's own poll, eating the very edges the UI
++		// state machine needs; the scaffold now makes ZERO touch-API
++		// calls). The engine hit-tests and does ALL Update-time math
++		// against GraphicsDevice.Viewport (CIwUiFrame.GetPosInPixels =
++		// fraction x viewport). On Android that viewport is the fitted
++		// backbuffer (1008x2077), so every UI rect came out ~2.1x/2.6x
++		// the 480x800 touch coordinates — taps selected the element at
++		// ~(fx/2.1, fy/2.6), i.e. above the finger, worst in Y. Pin the
++		// viewport to design space for all engine time. Draw is safe:
++		// SetRenderTarget(RT) rebinds the viewport to the RT's 480x800,
++		// and the final blit explicitly restores the full backbuffer
++		// viewport before SpriteBatch.Begin.
++		try
++		{
++			GraphicsDevice device = m_Graphics.GraphicsDevice;
++			if (device != null)
++			{
++				Viewport vp = device.Viewport;
++				if (vp.Width != 480 || vp.Height != m_DesignHeight || vp.X != 0 || vp.Y != 0)
++				{
++					device.Viewport = new Viewport(0, 0, 480, m_DesignHeight);
++				}
++			}
++		}
++		catch
++		{
++		}
+ 		using (CIwProfile.Scope("Update"))
+ 		{
+ 			try
+ 			{
+-				m_TheGame.Update(gameTime);
++				// TRACK-C WS3 (R3): cadence dispatch. The engine's own clock flag
++				// (CIwGameClock.FixedTimeStep) says whether the current state is a
++				// fixed-step state (gameplay: Box2D steps once per engine Update with
++				// dt = _System.Time.Dt = the GameTime elapsed we hand it). In fixed
++				// states we feed the engine exact 333333-tick quanta accumulated from
++				// real elapsed time -> physics sees a bit-identical 30 Hz stream,
++				// while Draw presents every display frame and interpolates the puck
++				// (FcgInterp) + the engine's own render-time camera damping smooths
++				// the view. In variable states (menus/frontend) the engine gets the
++				// real frame time exactly as before.
++				bool fcgFixed = CIwGameClock.Instance != null && CIwGameClock.Instance.FixedTimeStep;
++				if (!fcgFixed)
++				{
++					m_FcgAcc = TimeSpan.Zero;
++					m_FcgPuckSnapValid = false;
++					FcgInterp.Valid = false;
++					m_TheGame.Update(gameTime);
++				}
++				else
++				{
++					m_FcgAcc += gameTime.ElapsedGameTime;
++					long quanta = m_FcgAcc.Ticks / FcgQuantum.Ticks;
++					if (quanta > 3)
++					{
++						quanta = 3;
++						m_FcgAcc = TimeSpan.Zero;
++					}
++					else
++					{
++						m_FcgAcc -= TimeSpan.FromTicks(FcgQuantum.Ticks * quanta);
++					}
++					for (int q = 0; q < quanta; q++)
++					{
++						m_FcgLogicTotal += FcgQuantum;
++						m_TheGame.Update(new GameTime(m_FcgLogicTotal, FcgQuantum));
++							FcgSnapshotPuck();
++					}
++					if (m_FcgPuckSnapValid)
++					{
++						FcgInterp.Set(m_FcgPuckPrev, m_FcgPuckCur, (float)(m_FcgAcc.TotalMilliseconds / FcgQuantum.TotalMilliseconds));
++					}
++				}
+ 				base.Update(gameTime);
+ 			}
+ 			catch (GameUpdateRequiredException)
+@@ -122,12 +345,96 @@
+ 	{
+ 		using (CIwProfile.Scope("Draw"))
+ 		{
++			// Phase 3 fullscreen scaling: the WP7 engine draws at a fixed
++			// 480x800 (top-left, unscaled on Android's big backbuffer).
++			// Render it into a 480x800 target and blit that to the full
++			// backbuffer. The Pixel's game-view aspect (1008x1679) is ~0.600,
++			// effectively identical to 480x800 (0.6), so this is a uniform
++			// upscale with no letterboxing or distortion.
++			GraphicsDevice device = m_Graphics.GraphicsDevice;
++			// FULLASPECT (2026-11-15): the scale RT now matches the live
++			// backbuffer size exactly, so the RT aspect IS the device aspect.
++			// The engine renders a design window of 480 x (480 * bbH / bbW)
++			// into it â€” on taller screens the camera and the fraction-based
++			// UI show more vertically â€” and the blit below is an exact 1:1
++			// copy: one uniform scale on both axes, fullscreen, no bars, on
++			// any display. Recreated whenever the backbuffer size changes
++			// (the Phase 3 view fit, surface recreation).
++			int bbW = device.PresentationParameters.BackBufferWidth;
++			int bbH = device.PresentationParameters.BackBufferHeight;
++			if (m_ScaleRT == null || m_ScaleRT.Width != bbW || m_ScaleRT.Height != bbH)
++			{
++				if (m_ScaleRT != null)
++				{
++					m_ScaleRT.Dispose();
++				}
++				m_ScaleRT = new RenderTarget2D(device, bbW, bbH, mipMap: false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8);
++				if (m_ScaleBatch == null)
++				{
++					m_ScaleBatch = new SpriteBatch(device);
++				}
++			}
++			device.SetRenderTarget(m_ScaleRT);
+ 			m_TheGame.Render(gameTime);
+-			base.Draw(gameTime);
+-			if (CIwGameClock.Instance != null && CIwGameClock.Instance.FixedTimeStep != base.IsFixedTimeStep)
+-			{
+-				base.IsFixedTimeStep = CIwGameClock.Instance.FixedTimeStep;
+-			}
++			device.SetRenderTarget(null);
++			// TRACK-B: SpriteBatch builds its projection from the current
++			// viewport; the blit targets the full backbuffer, so restore
++			// the full-size viewport explicitly (Update's 480x800 pin
++			// must not leak into the blit).
++			device.Viewport = new Viewport(0, 0, device.PresentationParameters.BackBufferWidth, device.PresentationParameters.BackBufferHeight);
++			device.Clear(Color.Black);
++			m_ScaleBatch.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.LinearClamp, null, null);
++			BlitScaleRtFullAspect(device);
++			m_ScaleBatch.End();
++			base.Draw(gameTime); // TRACK-C WS3: base.IsFixedTimeStep stays false; cadence is scaffold-dispatched in Update.
++		}
++	}
++
++	// FULLASPECT (2026-11-15): supersedes BlitScaleRtAspectFit (the
++	// rejected letterboxed build). The scale RT now has exactly the
++	// backbuffer's size and aspect (see Draw), so this blit is a
++	// full-rectangle draw â€” scale exactly 1.0 on both axes: fullscreen,
++	// no bars, no distortion, at any display aspect. All aspect
++	// adaptation happens inside the engine pass (dynamic design window,
++	// camera FOV, UI draw correction), never in this blit.
++	private void BlitScaleRtFullAspect(GraphicsDevice device)
++	{
++		int bbW = device.PresentationParameters.BackBufferWidth;
++		int bbH = device.PresentationParameters.BackBufferHeight;
++		m_ScaleBatch.Draw(m_ScaleRT, new Rectangle(0, 0, bbW, bbH), Color.White);
++	}
++
++	// TRACK-C WS3: record the player puck's world translation after each
++	// engine quantum so Draw can interpolate between the last two logic states.
++	private void FcgSnapshotPuck()
++	{
++		try
++		{
++			CIwPuck puck = CPuckManager.Instance.PlayerPuck;
++			CIwFrame frame = (puck == null || puck.Owner == null) ? null : puck.Owner.GetComponent<CIwFrame>(0);
++			if (frame == null)
++			{
++				m_FcgPuckSnapValid = false;
++				FcgInterp.Valid = false;
++				return;
++			}
++			Microsoft.Xna.Framework.Vector3 p = frame.GetMatWorld().Translation;
++			if (!m_FcgPuckSnapValid)
++			{
++				m_FcgPuckPrev = p;
++				m_FcgPuckCur = p;
++				m_FcgPuckSnapValid = true;
++			}
++			else
++			{
++				m_FcgPuckPrev = m_FcgPuckCur;
++				m_FcgPuckCur = p;
++			}
++		}
++		catch
++		{
++			m_FcgPuckSnapValid = false;
++			FcgInterp.Valid = false;
+ 		}
+ 	}
+ 
+@@ -151,10 +458,11 @@
+ 		m_TheGame.PreserveState(PhoneApplicationService.Current.State);
+ 	}
+ 
+-	protected override void OnExiting(object sender, EventArgs args)
++	// PROBE PATCH (production: call this from the Android Activity lifecycle —
++	// MonoGame.Framework.Android 3.8.2 Game has no virtual OnExiting to override):
++	protected void OnExiting(object sender, EventArgs args)
+ 	{
+ 		m_TheGame.OnExiting();
+ 		MediaPlayer.Volume = InitialMediaVolume;
+-		base.OnExiting(sender, args);
+ 	}
+ }

@@ -1,0 +1,62 @@
+--- a/Tech/CIwAnimPlayer.cs
++++ b/Tech/CIwAnimPlayer.cs
+@@ -104,11 +104,49 @@
+ 		return m_CurrTime.TotalMilliseconds;
+ 	}
+ 
++	// TRACK-C2 PHASE 2 (animation-rate fix): this Update is called from
++	// CIwRenderableSkinModel.Render — once per DRAW, not per engine update —
++	// and the original code advanced the animation by the full last engine
++	// step (GetMsInterval) on every call. That was correct on WP7 and in the
++	// ship build, where fixed-step states draw exactly once per engine update
++	// (30 Hz). The WS3 scaffold presents at display rate (120 Hz) while engine
++	// updates stay at 30 Hz in fixed states, so the same call now advances
++	// 4x too much wall time per second: every skinned ambient animation
++	// (water_Idle, FW_Bats_Idle, monster idles) ran ~4x too fast. Fix: advance
++	// by the engine clock's actual delta since this player's last advance
++	// (_System.Time.TotalMiliseconds moves only when an engine update runs),
++	// so animation time tracks the game's 30 Hz logical clock exactly,
++	// independent of draw rate. Intermediate draws advance by 0; a draw after
++	// several queued quanta advances by their sum.
++	private double m_LastEngineTotalMs = -1.0;
++
++	private int ConsumeEngineDeltaMs()
++	{
++		double totalMs = (double)_System.Time.TotalMiliseconds;
++		if (m_LastEngineTotalMs < 0.0)
++		{
++			m_LastEngineTotalMs = totalMs;
++			return CIwGameClock.Instance.GetMsInterval();
++		}
++		double delta = totalMs - m_LastEngineTotalMs;
++		m_LastEngineTotalMs = totalMs;
++		if (delta < 0.0)
++		{
++			delta = 0.0;
++		}
++		if (delta > 500.0)
++		{
++			delta = 500.0;
++		}
++		return (int)delta;
++	}
++
+ 	public bool Update(bool relativeTime, Matrix root)
+ 	{
++		int advanceMs = ConsumeEngineDeltaMs();
+ 		if (m_randomDelay > TimeSpan.Zero)
+ 		{
+-			m_randomDelay -= TimeSpan.FromMilliseconds(CIwGameClock.Instance.GetMsInterval());
++			m_randomDelay -= TimeSpan.FromMilliseconds(advanceMs);
+ 		}
+ 		else
+ 		{
+@@ -116,7 +154,7 @@
+ 			{
+ 				CIwSoundManager.Instance.PlaySoundSet(m_SoundSet);
+ 			}
+-			m_CurrTime += TimeSpan.FromMilliseconds(CIwGameClock.Instance.GetMsInterval());
++			m_CurrTime += TimeSpan.FromMilliseconds(advanceMs);
+ 		}
+ 		UpdateBone(m_CurrTime, relativeTime: false);
+ 		UpdateWorld(root);

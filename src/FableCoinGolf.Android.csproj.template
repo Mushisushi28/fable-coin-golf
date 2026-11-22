@@ -2,7 +2,7 @@
   <!-- Fable: Coin Golf — Android preservation port (MonoGame).
        TEMPLATE: patcher/build.py copies this into your work tree as
        FableCoinGolf.Android.csproj. Set your own ApplicationId below
-       (or pass --application-id to the patcher).
+       (or pass the application-id option to the patcher).
 
        The decompiled game sources are LINKED from ..\..\decompiled\ —
        that tree is generated on YOUR machine from YOUR OWN XAP and is
@@ -41,15 +41,18 @@
   <ItemGroup>
     <!-- FabMob: the entry-point Game.cs is replaced by GamePatched.cs,
          which the patcher generates from YOUR decompiled Game.cs
-         (see patcher/apply_game_patch.py). -->
+         (patches/files/Game.cs.patch - HD/high-refresh presentation,
+         touch/viewport pinning, entry-point fixes). -->
     <Compile Include="..\..\decompiled\FabMob\**\*.cs" Exclude="..\..\decompiled\FabMob\Properties\AssemblyInfo.cs;..\..\decompiled\FabMob\Game.cs" LinkBase="Game\FabMob" />
-    <!-- Tech: CCloudConnectivity.cs is replaced by the local no-network
-         backend in this scaffold (compat/CCloudConnectivity.cs). Every
-         other Tech file compiles from your decompiled tree as-is.
-         Later polish fixes replace further Tech files with scaffold
-         copies; those are described as patches in patches/PATCHES.md
-         and are NOT required for a playable build. -->
-    <Compile Include="..\..\decompiled\Tech\**\*.cs" Exclude="..\..\decompiled\Tech\Properties\AssemblyInfo.cs;..\..\decompiled\Tech\CCloudConnectivity.cs" LinkBase="Game\Tech" />
+    <!-- Tech: the files below are replaced by patched copies that the
+         patcher generates from YOUR decompiled files into this project
+         folder (patches/files/*.patch - coin rendering, text scaling,
+         dialogue wrap, menu caps, startup hang, animation timing,
+         camera/presentation, and the local cloud backend). Every other
+         Tech file compiles from your decompiled tree as-is; four
+         leaderboard files are patched in place in your work copy of
+         the decompiled tree (they are not excluded). -->
+    <Compile Include="..\..\decompiled\Tech\**\*.cs" Exclude="..\..\decompiled\Tech\Properties\AssemblyInfo.cs;..\..\decompiled\Tech\CIwRenderableModel.cs;..\..\decompiled\Tech\CIwRenderableText.cs;..\..\decompiled\Tech\CIwSplashScreens.cs;..\..\decompiled\Tech\CGameOverState.cs;..\..\decompiled\Tech\CIwAnimPlayer.cs;..\..\decompiled\Tech\CCloudConnectivity.cs;..\..\decompiled\Tech\CIwRenderableTextureSpec.cs;..\..\decompiled\Tech\CFabMobGame.cs;..\..\decompiled\Tech\CIwDecoratedText.cs;..\..\decompiled\Tech\CIwCamera.cs;..\..\decompiled\Tech\CIwRenderableTexture.cs" LinkBase="Game\Tech" />
     <Compile Include="..\..\decompiled\ModelData\**\*.cs" Exclude="..\..\decompiled\ModelData\Properties\AssemblyInfo.cs" LinkBase="Game\ModelData" />
     <!-- XBOXLiveConnectivity: the Live wrapper is replaced by the local
          backend in this scaffold (compat/XboxLiveStub.cs). Only its two
